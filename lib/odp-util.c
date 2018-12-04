@@ -4836,6 +4836,7 @@ parse_l2_5_onward(const struct nlattr *attrs[OVS_KEY_ATTR_MAX + 1],
 
             ipv4_key = nl_attr_get(attrs[OVS_KEY_ATTR_IPV4]);
             put_ipv4_key(ipv4_key, flow, is_mask);
+        	VLOG_INFO("++++++++tsf parse_l2_5_onward: src=%lx, dst=%lx", flow->nw_src, flow->nw_dst);
             if (flow->nw_frag > FLOW_NW_FRAG_MASK) {
                 return ODP_FIT_ERROR;
             }
@@ -5186,11 +5187,27 @@ odp_flow_key_to_flow__(const struct nlattr *key, size_t key_len,
             expected_attrs |= UINT64_C(1) << OVS_KEY_ATTR_ETHERNET;
         }
     }
-    if (!is_mask) {
+
+    /* tsf: Packet header.
+     * TODO: cannot get whole packet header, maybe should consider OVS_PACKET_ATTR_PACKET. others are in OVS_PACKET_ATTR_KEY.
+     * @Hint: see recv_upcalls() -> dpif_netlink_recv(). */
+   /* if (present_attrs & (UINT64_C(1) << OVS_KEY_ATTR_PKT_HEADER)) {
+    	const struct ovs_key_pkt_header *pkt_header;
+
+    	pkt_header = nl_attr_get(attrs[OVS_KEY_ATTR_PKT_HEADER]);
+    	put_pof_pkt_header_key(pkt_header, flow);
+        VLOG_INFO("++++++tsf odp_flow_key_to_flow__: pkt_header");
+        if (is_mask) {
+            expected_attrs |= UINT64_C(1) << OVS_KEY_ATTR_PKT_HEADER;
+        }
+    }*/
+
+    /* tsf: TODO: we don't parse the fixed field location. try to parse whole pkt_header in future. */
+/*    if (!is_mask) {
         expected_attrs |= UINT64_C(1) << OVS_KEY_ATTR_ETHERNET;
     }
 
-    /* Get Ethertype or 802.1Q TPID or FLOW_DL_TYPE_NONE. */
+     Get Ethertype or 802.1Q TPID or FLOW_DL_TYPE_NONE.
     if (!parse_ethertype(attrs, present_attrs, &expected_attrs, flow,
         src_flow)) {
         return ODP_FIT_ERROR;
@@ -5203,19 +5220,22 @@ odp_flow_key_to_flow__(const struct nlattr *key, size_t key_len,
                                   expected_attrs, flow, key, key_len, src_flow);
     }
     if (is_mask) {
-        /* A missing VLAN mask means exact match on vlan_tci 0 (== no VLAN).
+         A missing VLAN mask means exact match on vlan_tci 0 (== no VLAN).
          *
          * tsf: no check for vlan
-         * */
+         *
 
-        /*flow->vlan_tci = htons(0xffff);
+        flow->vlan_tci = htons(0xffff);
         if (present_attrs & (UINT64_C(1) << OVS_KEY_ATTR_VLAN)) {
             flow->vlan_tci = nl_attr_get_be16(attrs[OVS_KEY_ATTR_VLAN]);
             expected_attrs |= (UINT64_C(1) << OVS_KEY_ATTR_VLAN);
-        }*/
+        }
     }
-    return parse_l2_5_onward(attrs, present_attrs, out_of_range_attr,
-                             expected_attrs, flow, key, key_len, src_flow);
+*/
+
+    /*return parse_l2_5_onward(attrs, present_attrs, out_of_range_attr,
+                             expected_attrs, flow, key, key_len, src_flow);*/
+    return ODP_FIT_PERFECT;
 }
 
 /* Converts the 'key_len' bytes of OVS_KEY_ATTR_* attributes in 'key' to a flow
@@ -5722,7 +5742,7 @@ commit_pof_delete_field_action(const struct flow *flow, struct flow *base_flow,
                              struct flow_wildcards *wc,
                              bool use_masked, int index)
 {
-    struct ovs_key_add_field key, base, mask;
+    struct ovs_key_delete_field key, base, mask;
 
     struct pof_flow * pflow = flow;
     struct pof_flow * pbase = base_flow;

@@ -979,6 +979,7 @@ classifier_lookup_pof__(const struct classifier *cls, ovs_version_t version,
     /* Initialize trie contexts for find_match_wc(). */
     for (int i = 0; i < cls->n_tries; i++) {
         trie_ctx_init(&trie_ctx[i], &cls->tries[i]);
+        /*VLOG_INFO("+++++++tsf classifier_lookup_pof__: masked_len[%d]=%d.", i, trie_ctx[i].maskbits);*/
     }
 
     /* Main loop. */
@@ -992,6 +993,7 @@ classifier_lookup_pof__(const struct classifier *cls, ovs_version_t version,
         if(NULL==cls || NULL==flow|| NULL == packet) continue;
         match = find_match_wc_pof(subtable, version, flow, packet, trie_ctx, cls->n_tries,
                               wc);
+        /*VLOG_INFO("+++++++tsf classifier_lookup_pof__: find_match_wc_pof -- match");*/
         if (!match || match->priority <= hard_pri) {
             continue;
         }
@@ -1026,49 +1028,50 @@ classifier_lookup_pof__(const struct classifier *cls, ovs_version_t version,
             }
         }
     }
-    if(!match){
-    PVECTOR_FOR_EACH_PRIORITY (subtable, hard_pri + 1, 2, sizeof *subtable,
-                               &cls->subtables) {
-        struct cls_conjunction_set *conj_set;
+    if(!match) {
+        PVECTOR_FOR_EACH_PRIORITY (subtable, hard_pri + 1, 2, sizeof *subtable,
+                                   &cls->subtables) {
+            struct cls_conjunction_set *conj_set;
 
-        /* Skip subtables with no match, or where the match is lower-priority
-         * than some certain match we've already found. */
-        match = find_match_wc(subtable, version, flow, trie_ctx, cls->n_tries,
-                              wc);
-        if (!match || match->priority <= hard_pri) {
-            continue;
-        }
+            /* Skip subtables with no match, or where the match is lower-priority
+             * than some certain match we've already found. */
+            match = find_match_wc(subtable, version, flow, trie_ctx, cls->n_tries,
+                                  wc);
+            /*VLOG_INFO("+++++++tsf classifier_lookup_pof__: find_match_wc_pof -- !match, original match");*/
+            if (!match || match->priority <= hard_pri) {
+                continue;
+            }
 
-        conj_set = ovsrcu_get(struct cls_conjunction_set *, &match->conj_set);
-        if (!conj_set) {
-            /* 'match' isn't part of a conjunctive match.  It's the best
-             * certain match we've got so far, since we know that it's
-             * higher-priority than hard_pri.
-             *
-             * (There might be a higher-priority conjunctive match.  We can't
-             * tell yet.) */
-            hard = match;
-            hard_pri = hard->priority;
-        } else if (allow_conjunctive_matches) {
-            /* 'match' is part of a conjunctive match.  Add it to the list. */
-            if (OVS_UNLIKELY(n_soft >= allocated_soft)) {
-                struct cls_conjunction_set **old_soft = soft;
+            conj_set = ovsrcu_get(struct cls_conjunction_set *, &match->conj_set);
+            if (!conj_set) {
+                /* 'match' isn't part of a conjunctive match.  It's the best
+                 * certain match we've got so far, since we know that it's
+                 * higher-priority than hard_pri.
+                 *
+                 * (There might be a higher-priority conjunctive match.  We can't
+                 * tell yet.) */
+                hard = match;
+                hard_pri = hard->priority;
+            } else if (allow_conjunctive_matches) {
+                /* 'match' is part of a conjunctive match.  Add it to the list. */
+                if (OVS_UNLIKELY(n_soft >= allocated_soft)) {
+                    struct cls_conjunction_set **old_soft = soft;
 
-                allocated_soft *= 2;
-                soft = xmalloc(allocated_soft * sizeof *soft);
-                memcpy(soft, old_soft, n_soft * sizeof *soft);
-                if (old_soft != soft_stub) {
-                    free(old_soft);
+                    allocated_soft *= 2;
+                    soft = xmalloc(allocated_soft * sizeof *soft);
+                    memcpy(soft, old_soft, n_soft * sizeof *soft);
+                    if (old_soft != soft_stub) {
+                        free(old_soft);
+                    }
+                }
+                soft[n_soft++] = conj_set;
+
+                /* Keep track of the highest-priority soft match. */
+                if (soft_pri < match->priority) {
+                    soft_pri = match->priority;
                 }
             }
-            soft[n_soft++] = conj_set;
-
-            /* Keep track of the highest-priority soft match. */
-            if (soft_pri < match->priority) {
-                soft_pri = match->priority;
-            }
         }
-    }
     }
 
     /* In the common case, at this point we have no soft matches and we can
@@ -2117,6 +2120,13 @@ find_match_wc_pof(const struct cls_subtable *subtable, ovs_version_t version,
     pof_minimask_expand(&subtable->mask, &pwc);
     uint16_t temp_i, jj=0;
     /*printf("Packet:\n");*/
+
+    struct pof_fp_flow *base_flow = flow;
+    /*for (int i=0; i<14; i++) {
+    	VLOG_INFO("++++++++tsf find_match_wc_pof: flow->normal[%d]=%llx", i, ntohll(base_flow->pof_normal[i]));
+    }*/
+    /*VLOG_INFO("++++++tsf find_match_wc_pof: subtable->n_indices=%d", subtable->n_indices);*/
+
     uint32_t len_B = dp_packet_size(packet);
     if (len_B==0 || packet==NULL) goto no_match;
     char *packetBuf = (char *) dp_packet_base(packet) + __packet_data(packet);
@@ -2135,6 +2145,9 @@ find_match_wc_pof(const struct cls_subtable *subtable, ovs_version_t version,
                     pflow.value[temp_i][j] = *(packetBuf + ntohs(pwc.masks.offset[temp_i])/8+j);
                 }*/
                 memcpy(&pflow.value[temp_i], packetBuf + ntohs(pwc.masks.offset[temp_i])/8, ntohs(pwc.masks.len[temp_i])/8);
+                /*for (int k=0; k <16; k++) {
+                	VLOG_INFO("+++++++tsf find_match_wc_pof: value[%d][%d]=%d", temp_i, k, pflow.value[temp_i][k]);
+                }*/
             }/*
                 pofbf_copy_bit(packetBuf, tmp,ntohs(pwc.masks.offset[temp_i]), ntohs(pwc.masks.len[temp_i]));
             }
@@ -2158,6 +2171,27 @@ find_match_wc_pof(const struct cls_subtable *subtable, ovs_version_t version,
     struct flowmap stages_map = FLOWMAP_EMPTY_INITIALIZER;
     unsigned int mask_offset = 0;
     int i=0;
+
+    for (i=0; i < subtable->n_indices; i++) {
+        if (check_tries(trie_ctx, n_tries, subtable->trie_plen,
+                        subtable->index_maps[i], &pflow, &pwc)) {
+            /* 'wc' bits for the trie field set, now unwildcard the preceding
+             * bits used so far. */
+            goto no_match;
+        }
+
+        /* Accumulate the map used so far. */
+        stages_map = flowmap_or(stages_map, subtable->index_maps[i]);
+
+        hash = flow_hash_in_minimask_range_pof(&pflow, &subtable->mask,
+                                           subtable->index_maps[i],
+                                           &mask_offset, &basis);
+
+        if (!ccmap_find(&subtable->indices[i], hash)) {
+            goto no_match;
+        }
+    }
+
     hash = flow_hash_in_minimask_range_pof(&pflow, &subtable->mask,
                                        subtable->index_maps[i],
                                        &mask_offset, &basis);
@@ -2167,7 +2201,7 @@ find_match_wc_pof(const struct cls_subtable *subtable, ovs_version_t version,
         /* The final stage had ports, but there was no match.  Instead of
          * unwildcarding all the ports bits, use the ports trie to figure out a
          * smaller set of bits to unwildcard. */
-        VLOG_INFO("+++++++++++sqy find_match_wc_pof:  !rule && subtable->ports_mask_len");
+        VLOG_INFO("+++++++++++sqy find_match_wc_pof:  !rule && subtable->ports_mask_len=%d", subtable->ports_mask_len);
         unsigned int mbits;
         ovs_be32 value, plens, mask;
 

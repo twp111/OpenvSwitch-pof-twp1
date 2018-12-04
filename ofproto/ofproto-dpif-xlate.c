@@ -5912,6 +5912,9 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
     }
     ctx.wc->masks.tunnel.metadata.tab = flow->tunnel.metadata.tab;
 
+    if (!xin->packet) {
+    	VLOG_INFO("++++++++tsf xlate_actions: xin->pkt null");
+    }
     if (!xin->ofpacts && !ctx.rule) {  //sqy note: ctx.rule = null, xin->ofpacts = null, run here.
         ctx.rule = rule_dpif_lookup_from_table_pof(
             ctx.xbridge->ofproto, ctx.xin->tables_version, flow, xin->packet, ctx.wc,

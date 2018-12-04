@@ -63,7 +63,7 @@ modprobe uio_pci_generic
 ./tools/dpdk-devbind.py --bind=igb_uio 0000:05:00.0 # sfp eth5
 ./tools/dpdk-devbind.py --bind=igb_uio 0000:05:00.1 # sfp eth6
 #./tools/dpdk-devbind.py --bind=uio_pci_generic 0000:07:00.0 # eth1
-#./tools/dpdk-devbind.py --bind=uio_pci_generic 0000:07:00.1 # eth2
+./tools/dpdk-devbind.py --bind=uio_pci_generic 0000:07:00.1 # eth2
 ./tools/dpdk-devbind.py --status
 echo "DPDK Environment Success"
 cd $OVS_DIR
@@ -98,6 +98,7 @@ ovs-vsctl add-br br0 -- set bridge br0 datapath_type=netdev
 #ovs-vsctl set-controller br0 tcp:192.168.109.209:6666
 ovs-vsctl add-port br0 dpdk0 -- set Interface dpdk0 type=dpdk
 ovs-vsctl add-port br0 dpdk1 -- set Interface dpdk1 type=dpdk
+ovs-vsctl add-port br0 dpdk2 -- set Interface dpdk2 type=dpdk
 #ovs-ofctl show br0
 sleep 1s
 

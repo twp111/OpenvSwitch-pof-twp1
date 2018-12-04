@@ -176,6 +176,7 @@ struct dpcls {
 
 /* A rule to be inserted to the classifier. */
 struct dpcls_rule {
+	uint32_t key_hash;           /* flow key hash. */
     struct cmap_node cmap_node;   /* Within struct dpcls_subtable 'rules'. */
     struct netdev_flow_key *mask; /* Subtable's mask. */
     struct netdev_flow_key flow;  /* Matching key. */
@@ -186,7 +187,8 @@ static void dpcls_init(struct dpcls *);
 static void dpcls_destroy(struct dpcls *);
 static void dpcls_sort_subtable_vector(struct dpcls *);
 static void dpcls_insert(struct dpcls *, struct dpcls_rule *,
-                         const struct netdev_flow_key *mask);
+                         const struct netdev_flow_key *mask,
+                         uint32_t key_hash);
 static void dpcls_remove(struct dpcls *, struct dpcls_rule *);
 static bool dpcls_lookup(struct dpcls *cls,
                          const struct netdev_flow_key keys[],
@@ -2011,12 +2013,14 @@ static inline struct dp_netdev_flow *
 emc_lookup(struct emc_cache *cache, const struct netdev_flow_key *key)
 {
     struct emc_entry *current_entry;
+    int i=0;
 
     EMC_FOR_EACH_POS_WITH_HASH(cache, current_entry, key->hash) {
+    	i++;
     	/*VLOG_INFO("++++++tsf emc_lookup: emc_entry_alive=%d, emc_cache_idx=%d", emc_entry_alive(current_entry), cache->sweep_idx);*/
 //    	VLOG_INFO("+++++++tsf emc_entry_alive: !ce->flow->dead?=%d", emc_entry_alive(current_entry));
 
-//    	VLOG_INFO("++++++tsf emc_lookup: cur_hash=%d, key_hash=%d", current_entry->key.hash, key->hash);
+    	VLOG_INFO("++++++tsf emc_lookup: cur_hash=%u, key_hash=%u, i=%d", current_entry->key.hash, key->hash, i);
 //    	VLOG_INFO("++++++tsf emc_lookup: netdev_flow_key_equal_mf=%d", netdev_flow_key_equal_mf(&current_entry->key, &key->mf));
 
     	/* tsf: The key->mf and current_entry->key should be equals in openflow. However, the key->mf comes
@@ -2026,10 +2030,11 @@ emc_lookup(struct emc_cache *cache, const struct netdev_flow_key *key)
     	 *      increases from 1.0132E6 fps to 4.0016E6 fps, 680 Mbps to 2689 Mbps. */
     	if (current_entry->key.hash == key->hash
             && emc_entry_alive(current_entry)
-            /*&& netdev_flow_key_equal_mf(&current_entry->key, &key->mf)*/) {
+            && netdev_flow_key_equal_mf(&current_entry->key, &key->mf)) {
 
             /* We found the entry with the 'key->mf' miniflow */
-//    		VLOG_INFO("++++++tsf emc_lookup: cur_flow.ufid=%d", current_entry->flow->ufid);
+    		VLOG_INFO("++++++tsf emc_lookup: cur_flow.ufid=%d, flow.hash=%u, rule.hash=%u", current_entry->flow->ufid,
+    				current_entry->flow->cr.flow.hash, current_entry->key.hash);
     		return current_entry->flow;
         }
     }
@@ -2279,7 +2284,8 @@ out:
 static struct dp_netdev_flow *
 dp_netdev_flow_add(struct dp_netdev_pmd_thread *pmd,
                    struct match *match, const ovs_u128 *ufid,
-                   const struct nlattr *actions, size_t actions_len)
+                   const struct nlattr *actions, size_t actions_len,
+                   uint32_t key_hash)
     OVS_REQUIRES(pmd->flow_mutex)
 {
     struct dp_netdev_flow *flow;
@@ -2311,7 +2317,7 @@ dp_netdev_flow_add(struct dp_netdev_pmd_thread *pmd,
     /* Select dpcls for in_port. Relies on in_port to be exact match */
     ovs_assert(match->wc.masks.in_port.odp_port == ODP_PORT_C(UINT32_MAX));
     cls = dp_netdev_pmd_find_dpcls(pmd, in_port);
-    dpcls_insert(cls, &flow->cr, &mask);
+    dpcls_insert(cls, &flow->cr, &mask, key_hash);
 
     cmap_insert(&pmd->flow_table, CONST_CAST(struct cmap_node *, &flow->node),
                 dp_netdev_flow_hash(&flow->ufid));
@@ -2400,7 +2406,7 @@ dpif_netdev_flow_put(struct dpif *dpif, const struct dpif_flow_put *put)
                     memset(put->stats, 0, sizeof *put->stats);
                 }
                 dp_netdev_flow_add(pmd, &match, &ufid, put->actions,
-                                   put->actions_len);
+                                   put->actions_len, 0);
                 error = 0;
             } else {
                 error = EFBIG;
@@ -3846,7 +3852,7 @@ static int
 dp_netdev_upcall(struct dp_netdev_pmd_thread *pmd, struct dp_packet *packet_,
                  struct flow *flow, struct flow_wildcards *wc, ovs_u128 *ufid,
                  enum dpif_upcall_type type, const struct nlattr *userdata,
-                 struct ofpbuf *actions, struct ofpbuf *put_actions)
+                 struct ofpbuf *actions, struct ofpbuf *put_actions, uint32_t key_hash)
 {
     struct dp_netdev *dp = pmd->dp;
 
@@ -3881,7 +3887,7 @@ dp_netdev_upcall(struct dp_netdev_pmd_thread *pmd, struct dp_packet *packet_,
     }    
 
     return dp->upcall_cb(packet_, flow, ufid, pmd->core_id, type, userdata,
-                         actions, wc, put_actions, dp->upcall_aux);
+                         actions, wc, put_actions, dp->upcall_aux, key_hash);
 }
 
 static inline uint32_t
@@ -4110,6 +4116,12 @@ handle_packet_upcall(struct dp_netdev_pmd_thread *pmd, struct dp_packet *packet,
     ovs_u128 ufid;
     int error;
 
+    if (packet) {
+    	VLOG_INFO("++++++tsf fast_path_processing: handle_packet_upcall: pkt_size=%d.", dp_packet_size(packet));
+    } else {
+        VLOG_INFO("++++++tsf fast_path_processing: handle_packet_upcall: pkt is null.");
+    }
+
     match.tun_md.valid = false;
     match.wc.masks.have_sel_group_action = false;
     match.wc.masks.sel_int_action = false;
@@ -4121,7 +4133,7 @@ handle_packet_upcall(struct dp_netdev_pmd_thread *pmd, struct dp_packet *packet,
     dpif_flow_hash(pmd->dp->dpif, &match.flow, sizeof match.flow, &ufid);
     error = dp_netdev_upcall(pmd, packet, &match.flow, &match.wc,
                              &ufid, DPIF_UC_MISS, NULL, actions,
-                             put_actions);
+                             put_actions, key->hash);
     if (OVS_UNLIKELY(error && error != ENOSPC)) {  //sqy notes: no run
         dp_packet_delete(packet);
         (*lost_cnt)++;
@@ -4161,7 +4173,10 @@ handle_packet_upcall(struct dp_netdev_pmd_thread *pmd, struct dp_packet *packet,
         if (OVS_LIKELY(!netdev_flow)) {
             netdev_flow = dp_netdev_flow_add(pmd, &match, &ufid,
                                              add_actions->data,
-                                             add_actions->size);
+                                             add_actions->size, key->hash);
+            VLOG_INFO("++++++++tsf handle_packet_upcall->add_netdev_flow: netdev_flow.cr.flow.hash=%u, netflow.key_hash=%u, key.hash(i-flow)=%u", netdev_flow->cr.flow.hash,
+            		netdev_flow->cr.key_hash ,key->hash);
+
             netdev_flow->stats.sel_group_table_flags = false;
             netdev_flow->sel_int_action = false;
 
@@ -4210,7 +4225,9 @@ fast_path_processing(struct dp_netdev_pmd_thread *pmd,
     for (i = 0; i < cnt; i++) {
         /* Key length is needed in all the cases, hash computed on demand. */
         keys[i].len = netdev_flow_key_size(miniflow_n_values(&keys[i].mf));
+        VLOG_INFO("++++++tsf fast_path_processing: key[%d].len=%u, hash=%u", i, keys[i].len, keys[i].hash);
     }
+
     /* Get the classifier for the in_port */
     cls = dp_netdev_pmd_lookup_dpcls(pmd, in_port);
     if (OVS_LIKELY(cls)) {
@@ -4219,6 +4236,7 @@ fast_path_processing(struct dp_netdev_pmd_thread *pmd,
         any_miss = true;
         memset(rules, 0, sizeof(rules));
     }
+
     if (OVS_UNLIKELY(any_miss) && !fat_rwlock_tryrdlock(&dp->upcall_rwlock)) {
         uint64_t actions_stub[512 / 8], slow_stub[512 / 8];
         struct ofpbuf actions, put_actions;
@@ -4245,7 +4263,7 @@ fast_path_processing(struct dp_netdev_pmd_thread *pmd,
             }
 
             miss_cnt++;
-//            VLOG_INFO("++++++tsf fast_path_processing: handle_packet_upcall");
+            VLOG_INFO("++++++tsf fast_path_processing: handle_packet_upcall");
             handle_packet_upcall(pmd, packets[i], &keys[i], &actions,
                                  &put_actions, &lost_cnt, now);
         }
@@ -4258,6 +4276,7 @@ fast_path_processing(struct dp_netdev_pmd_thread *pmd,
         for (i = 0; i < cnt; i++) {
             if (OVS_UNLIKELY(!rules[i])) {
                 dp_packet_delete(packets[i]);
+                VLOG_INFO("++++++tsf fast_path_processing: dp_packet_delete, i=%d", i);
                 lost_cnt++;
                 miss_cnt++;
             }
@@ -4275,7 +4294,8 @@ fast_path_processing(struct dp_netdev_pmd_thread *pmd,
         flow = dp_netdev_flow_cast(rules[i]);
 
         emc_insert(flow_cache, &keys[i], flow);
-        /*VLOG_INFO("+++++++tsf fast_path_processing: dp_netdev_queue_batches 222");*/
+        VLOG_INFO("+++++++tsf fast_path_processing: dp_netdev_queue_batches 222, ufid[%d]=%d, flow.hash=%u", i, flow->ufid,
+        		flow->cr.flow.hash);
         dp_netdev_queue_batches(packet, flow, &keys[i].mf, batches, n_batches);
     }
 
@@ -4496,7 +4516,7 @@ dp_execute_userspace_action(struct dp_netdev_pmd_thread *pmd,
 
     error = dp_netdev_upcall(pmd, packet, flow, NULL, ufid,
                              DPIF_UC_ACTION, userdata, actions,
-                             NULL);
+                             NULL, 0);
     if (!error || error == ENOSPC) {
         packet_batch_init_packet(&b, packet);
         dp_netdev_execute_actions(pmd, &b, may_steal, flow,
@@ -5087,13 +5107,15 @@ dp_netdev_pmd_try_optimize(struct dp_netdev_pmd_thread *pmd)
 /* Insert 'rule' into 'cls'. */
 static void
 dpcls_insert(struct dpcls *cls, struct dpcls_rule *rule,
-             const struct netdev_flow_key *mask)
+             const struct netdev_flow_key *mask, uint32_t key_hash)
 {
     struct dpcls_subtable *subtable = dpcls_find_subtable(cls, mask);
 
     /* Refer to subtable's mask, also for later removal. */
     rule->mask = &subtable->mask;
     cmap_insert(&subtable->rules, &rule->cmap_node, rule->flow.hash);
+    rule->key_hash = key_hash;
+    VLOG_INFO("+++++++++tsf dpcls_insert: rule->flow.hash(match)=%u, mask.hash=%u, rule.key_hash=%u", rule->flow.hash, rule->mask->hash, rule->key_hash);
 }
 
 /* Removes 'rule' from 'cls', also destructing the 'rule'. */
@@ -5202,6 +5224,7 @@ dpcls_lookup(struct dpcls *cls, const struct netdev_flow_key keys[],
             ULLONG_FOR_EACH_1(i, map) {
                 hashes[i] = netdev_flow_key_hash_in_mask(&mkeys[i],
                                                          &subtable->mask);
+                VLOG_INFO("+++++++tsf dpcls_lookup: hash[%d]=%u, key[%d].hash(i-flow)=%u", i, hashes[i], i, mkeys[i].hash);
             }
             /* Lookup. */
             map = cmap_find_batch(&subtable->rules, map, hashes, nodes);
@@ -5215,11 +5238,19 @@ dpcls_lookup(struct dpcls *cls, const struct netdev_flow_key keys[],
 
                 CMAP_NODE_FOR_EACH (rule, cmap_node, nodes[i]) {
                     if (OVS_LIKELY(dpcls_rule_matches_key(rule, &mkeys[i]))) {
+                    	if (rule->key_hash != mkeys[i].hash) {
+                    		VLOG_INFO("+++++++++tsf dpcls_lookup 1: rule->key_hash=%u, mkeys[%d].hash=%u", rule->key_hash, i, mkeys[i].hash);
+                    		ULLONG_SET0(map, i);  /* Did not match. */
+                    		goto next;
+                    	}
+
                         mrules[i] = rule;
                         /* Even at 20 Mpps the 32-bit hit_cnt cannot wrap
                          * within one second optimization interval  */
                         subtable->hit_cnt++;
                         lookups_match += subtable_pos;
+                        VLOG_INFO("++++++tsf dpcls_lookup 2: find_rules[%d], rule.flow.hash=%u, rule->key_hash=%u, mkeys.hash=%u", i, rule->flow.hash,
+                        		 rule->key_hash, mkeys[i].hash);
                         goto next;
                     }
                 }

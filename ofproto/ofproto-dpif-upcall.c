@@ -198,6 +198,7 @@ struct upcall {
     struct ofproto_dpif *ofproto;  /* Parent ofproto. */
     const struct recirc_id_node *recirc; /* Recirculation context. */
     bool have_recirc_ref;                /* Reference held on recirc ctx? */
+    uint32_t flow_key_hash;              /* tsf */
 
     /* The flow and packet are only required to be constant when using
      * dpif-netdev.  If a modification is absolutely necessary, a const cast
@@ -1208,7 +1209,7 @@ static int
 upcall_cb(const struct dp_packet *packet, const struct flow *flow, ovs_u128 *ufid,
           unsigned pmd_id, enum dpif_upcall_type type,
           const struct nlattr *userdata, struct ofpbuf *actions,
-          struct flow_wildcards *wc, struct ofpbuf *put_actions, void *aux)
+          struct flow_wildcards *wc, struct ofpbuf *put_actions, void *aux, uint32_t key_hash)
 {
     static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 1);
     struct udpif *udpif = aux;
@@ -1220,6 +1221,7 @@ upcall_cb(const struct dp_packet *packet, const struct flow *flow, ovs_u128 *ufi
 
     error = upcall_receive(&upcall, udpif->backer, packet, type, userdata,
                            flow, 0, ufid, pmd_id);
+    upcall.flow_key_hash = key_hash;
 
     if (error) {
         return error;
@@ -1472,7 +1474,7 @@ ukey_create__(const struct nlattr *key, size_t key_len,
               bool ufid_present, const ovs_u128 *ufid,
               const unsigned pmd_id, const struct ofpbuf *actions,
               uint64_t dump_seq, uint64_t reval_seq, long long int used,
-              uint32_t key_recirc_id, struct xlate_out *xout)
+              uint32_t key_recirc_id, struct xlate_out *xout, uint32_t flow_key_hash)
     OVS_NO_THREAD_SAFETY_ANALYSIS
 {
     struct udpif_key *ukey = xmalloc(sizeof *ukey);
@@ -1544,7 +1546,7 @@ ukey_create_from_upcall(struct upcall *upcall, struct flow_wildcards *wc)
                          &upcall->put_actions, upcall->dump_seq,
                          upcall->reval_seq, 0,
                          upcall->have_recirc_ref ? upcall->recirc->id : 0,
-                         &upcall->xout);
+                         &upcall->xout, upcall->flow_key_hash);
 }
 
 static int
@@ -1597,7 +1599,7 @@ ukey_create_from_dpif_flow(const struct udpif *udpif,
     *ukey = ukey_create__(flow->key, flow->key_len,
                           flow->mask, flow->mask_len, flow->ufid_present,
                           &flow->ufid, flow->pmd_id, &actions, dump_seq,
-                          reval_seq, flow->stats.used, 0, NULL);
+                          reval_seq, flow->stats.used, 0, NULL, 0);
 
     return 0;
 }
@@ -1887,6 +1889,7 @@ xlate_key(struct udpif *udpif, const struct nlattr *key, unsigned int len,
     struct xlate_in xin;
     int error;
 
+    VLOG_INFO("+++++++tsf xlate_key: before odp_flow_key_to_flow");
     if (odp_flow_key_to_flow(key, len, &ctx->flow) == ODP_FIT_ERROR) {
         return EINVAL;
     }

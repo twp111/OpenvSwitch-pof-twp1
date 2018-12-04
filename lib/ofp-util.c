@@ -1718,8 +1718,8 @@ ofputil_decode_flow_mod_pof(struct ofputil_pof_flow_mod *fm,
             for (j = 0; j < ARRAY_SIZE(ofm->match[i].value); j++) {
                 fm->match.flow.value[i][j] = ofm->match[i].value[j];
                 fm->match.wc.masks.value[i][j] = ofm->match[i].mask[j];
-                /*VLOG_INFO("++++++++sqy ofputil_decode_flow_mod_pof %d: value: %d; mask: %d",
-                          i, fm->match.flow.value[i][j], fm->match.wc.masks.value[i][j]);*/
+                VLOG_INFO("++++++++sqy ofputil_decode_flow_mod_pof %d: value: %d; mask: %d",
+                          i, fm->match.flow.value[i][j], fm->match.wc.masks.value[i][j]);
             }
         }
 

@@ -835,7 +835,7 @@ typedef int upcall_callback(const struct dp_packet *packet,
                             struct ofpbuf *actions,
                             struct flow_wildcards *wc,
                             struct ofpbuf *put_actions,
-                            void *aux);
+                            void *aux, uint32_t key_hash);
 
 void dpif_register_upcall_cb(struct dpif *, upcall_callback *, void *aux);
 
