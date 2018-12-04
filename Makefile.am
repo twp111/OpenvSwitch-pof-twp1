@@ -116,6 +116,9 @@ EXTRA_DIST = \
 	.idea/misc.xml \
 	.idea/modules.xml \
 	.idea/workspace.xml \
+	.idea/codeStyles/Project.xml \
+	.idea/markdown-navigator.xml \
+    .idea/markdown-navigator/profiles_settings.xml \
 	include/README.md \
 	OVS206.config \
 	OVS206.creator \
