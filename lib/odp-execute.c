@@ -257,7 +257,8 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
         }
 
         if (final_mapInfo & (UINT8_C(1) << 3)) { // tsf: ingress_time, 8B
-        	memcpy(int_value + int_len, uint64_to_arr(ingress_time), INT_DATA_INGRESS_TIME_LEN);
+            ingress_time = htonll(ingress_time);
+            memcpy(int_value + int_len, &ingress_time, INT_DATA_INGRESS_TIME_LEN);
         	int_len += INT_DATA_INGRESS_TIME_LEN;
         	/*VLOG_INFO("++++++tsf odp_pof_add_field: ingress_time=%llx / %llx", ingress_time, ingress_time__);*/
         }
