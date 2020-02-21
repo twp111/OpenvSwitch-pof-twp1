@@ -160,7 +160,8 @@ uint8_t int_src_type_ttl[3] = {0x09, 0x08, 0x01};
 #define INT_DATA_INGRESS_TIME_LEN    8
 #define INT_DATA_HOP_LATENCY_LEN     2
 #define INT_DATA_BANDWIDTH_LEN       4
-
+#define INT_DATA_N_PACKETS_LEN       8
+#define INT_DATA_N_BYTES_LEN         8
 /* tsf: invisible packet length. */
 #define INTER_FRAME_GAP              12  /* in bytes */
 #define PKT_PREAMBLE_SIZE             8  /* in bytes */
@@ -285,6 +286,14 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
             memcpy(int_value + int_len, &bandwidth, INT_DATA_BANDWIDTH_LEN);      // stored as float type
             int_len += INT_DATA_BANDWIDTH_LEN;
         }
+        if (final_mapInfo & (UINT8_C(1) << 6)) {
+            memcpy(int_value + int_len, &(bd_info->n_packets), INT_DATA_N_PACKETS_LEN);
+            int_len += INT_DATA_N_PACKETS_LEN;
+        }
+        if (final_mapInfo & (UINT8_C(1) << 7)) {
+            memcpy(int_value + int_len, &(bd_info->n_bytes), INT_DATA_N_BYTES_LEN);
+            int_len += INT_DATA_N_BYTES_LEN;
+        }
 
         /* Adjust counter's value to control log rate.*/
         /*counter++;
@@ -369,8 +378,11 @@ odp_pof_delete_field(struct dp_packet *packet, const struct ovs_key_delete_field
         	int_data_len += INT_DATA_HOP_LATENCY_LEN;
         }
 
-        if (int_map & (UINT8_C(1) << 5)) { // tsf: bandwidth, 4B
-            int_data_len += INT_DATA_BANDWIDTH_LEN;
+        if (int_map & (UINT8_C(1) << 5)) { // tsf: n_packets, 8B
+            int_data_len += INT_DATA_N_PACKETS_LEN;
+        }
+        if (int_map & (UINT8_C(1) << 6)) { // tsf: n_bytes, 8B
+            int_data_len += INT_DATA_N_BYTES_LEN;
         }
 
         /* delete_field in act3. */
