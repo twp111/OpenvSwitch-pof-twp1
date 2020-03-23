@@ -66,10 +66,9 @@ const char *flow_tun_flag_to_string(uint32_t flags);
 
 /* tsf: to store the In-Band-Telemetry data*/
 struct pof_metadata {
-	uint8_t in_port;            // input_port, 8 bits in pof, 32 bits in openflow
-	uint8_t out_port;           // output port
-	uint8_t pad[2];
-	uint32_t device_id;         // data_path id
+	uint32_t in_port;            // input_port
+	uint32_t out_port;           // output port
+	uint64_t device_id;         // data_path id
 };
 
 struct pof_flow {
@@ -88,7 +87,7 @@ struct pof_flow {
     uint8_t flag[POF_MAX_MATCH_FIELD_NUM];  // tsf: indicate the corresponding index for the stored fields to be processed
     struct pof_metadata telemetry;          // tsf: to store the INT meta_data
 
-    uint8_t pad_to_flow[POF_MAX_MATCH_FIELD_NUM][31];
+    uint8_t pad_to_flow[POF_MAX_MATCH_FIELD_NUM][30];
 };
 
 struct pof_fp_flow {

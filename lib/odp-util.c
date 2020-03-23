@@ -5656,8 +5656,9 @@ get_pof_add_field_key(const struct pof_flow *flow, struct ovs_key_add_field *eth
             eth->value[i] = flow->value[index][i];  // tsf: add 16 bytes most
             /*VLOG_INFO("++++++tsf get_add_pof_field_key:  eth->value[%d]=%d", i, eth->value[i]);*/
         }
-    } else {   // add INT fields which come from ovs, value[0] stores the INT intent
+    } else {   // add INT fields which come from ovs, value[0] and value[1] stores the INT intent
     	eth->value[0] = flow->value[index][0];
+    	eth->value[1] = flow->value[index][1];
     	eth->device_id = flow->telemetry.device_id;
     	eth->in_port = flow->telemetry.in_port;
     	eth->out_port = flow->telemetry.out_port;
@@ -5685,6 +5686,7 @@ get_pof_add_field_mask(const struct pof_flow *flow, struct ovs_key_add_field *et
         }
     } else {   // add INT fields which come from ovs, value[0] stores the INT intent
         eth->value[0] = flow->value[index][0];
+        eth->value[1] = flow->value[index][1];
         eth->device_id = flow->telemetry.device_id;
         eth->in_port = flow->telemetry.in_port;
         eth->out_port = flow->telemetry.out_port;
@@ -5710,6 +5712,7 @@ put_pof_add_field_key(const struct ovs_key_add_field *eth, struct pof_flow *flow
         }
     } else {  // add INT fields come from ovs
         flow->value[index][0] = eth->value[0];
+        flow->value[index][1] = eth->value[1];
         flow->telemetry.device_id = eth->device_id;
         flow->telemetry.in_port = eth->in_port;
         flow->telemetry.out_port = eth->out_port;

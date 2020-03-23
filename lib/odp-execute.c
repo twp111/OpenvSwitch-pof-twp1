@@ -138,6 +138,7 @@ int counter = 0;          // used to limit log rate
 /* tsf: we define INT header in Byte: ETH + IP + INT (type_ttl_mapInfo_medata) + PAYLOAD. */
 #define ETH_HEADER_LEN              14
 #define IPV4_HEADER_LEN             20
+#define IPV4_SRC_BASE               26
 #define INT_HEADER_BASE             34
 #define INT_HEADER_LEN               4
 #define INT_HEADER_TYPE_OFF         34
@@ -201,16 +202,19 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
 	     * @param key->len refers to N, which selects one every N packets.
 	     * */
 
-		uint32_t device_id = ntohl(key->device_id);
+		uint32_t device_id = ntohl((uint32_t) key->device_id);
 		uint32_t ingress_time__ = (uint32_t) ingress_time;
-		uint16_t in_port = key->in_port;
-		uint16_t out_port = key->out_port;
+		uint16_t in_port = (uint16_t) key->in_port;
+		uint16_t out_port = (uint16_t) key->out_port;
 
         uint16_t int_offset = key->len;
 		uint16_t int_len = 0;                          // indicate how many available bytes in int_value[]
 		uint8_t int_value[32];                         // should cover added fields.
-		uint16_t controller_mapInfo = key->value[0];    // the mapInfo comes from controller
+
+		uint16_t controller_mapInfo = key->value[1] << 8
+									+ key->value[0];    // the mapInfo comes from controller, 2B
 		uint16_t final_mapInfo = 0;                     // the final intent mapInfo
+
         uint16_t sampling_rate_N = key->len;           // the sampling rate defined by key->len ('N')
 		uint16_t int_type = 0;
 #ifdef FLOW_BW
@@ -295,7 +299,7 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
         if (final_mapInfo & (UINT16_C(1) << 4)) { // tsf: hop latency, 4B
 //        	uint64_t egress_time = (uint64_t) time_usec();             // monotonic timer
         	uint64_t egress_time = (uint64_t) time_wall_usec();        // current time
-        	uint32_t diff_time = ntohl(egress_time - ingress_time__);  // for packet level
+        	uint32_t diff_time = ntohl((uint32_t) (egress_time - ingress_time__));  // for packet level
         	memcpy(int_value + int_len, &diff_time, INT_DATA_HOP_LATENCY_LEN);
         	int_len += INT_DATA_HOP_LATENCY_LEN;
         	/*VLOG_INFO("++++++tsf odp_pof_add_field: egress_time=%llx, diff_lantency=%d us", egress_time, htons(diff_time));*/
@@ -307,13 +311,25 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
             memcpy(int_value + int_len, &bandwidth, INT_DATA_BANDWIDTH_LEN);      // stored as float type
             int_len += INT_DATA_BANDWIDTH_LEN;
         }
+
         if (final_mapInfo & (UINT16_C(1) << 6)) { // lty: n_packets,8B 
             memcpy(int_value + int_len, &(bd_info->n_packets), INT_DATA_N_PACKETS_LEN);
             int_len += INT_DATA_N_PACKETS_LEN;
         }
+
         if (final_mapInfo & (UINT16_C(1) << 7)) {// lty: n_bytes, 8B
             memcpy(int_value + int_len, &(bd_info->n_bytes), INT_DATA_N_BYTES_LEN);
             int_len += INT_DATA_N_BYTES_LEN;
+        }
+
+        if (final_mapInfo & (UINT16_C(1) << 8)) {// tsf: queue_len, 4B
+            // not supported, do nothing
+        }
+
+        if (final_mapInfo & (UINT16_C(1) << 9)) {// tsf: fwd_acts, 2B
+            uint16_t fwd_acts = 0;  // TODO
+            memcpy(int_value + int_len, &fwd_acts, INT_DATA_FWD_ACTS);
+            int_len += INT_DATA_FWD_ACTS;
         }
 
         /* Adjust counter's value to control log rate.*/
@@ -359,7 +375,7 @@ odp_pof_delete_field(struct dp_packet *packet, const struct ovs_key_delete_field
 	/* tsf: act1: defined as delete_trunc_field action, truncate packets into key->len length from header. */
 	if (key->offset == 0xffff / 8) {
 		/* delete_field in act3. */
-		int kept_offset = 26, kept_len = key->len;    // kept_offset defines the start location from header
+		int kept_offset = IPV4_SRC_BASE, kept_len = key->len;    // kept_offset defines the start location from header
 		memcpy(header, header+kept_offset, kept_len);
 		len = dp_packet_size(packet) - key->len;     // remained payload to be deleted
 		offset = key->len;                           // keep key->len header
@@ -374,20 +390,22 @@ odp_pof_delete_field(struct dp_packet *packet, const struct ovs_key_delete_field
 	     * int_format: type + ttl + mapInfo + data_1 + data_1 + ... + data_1*/
 
 		int int_data_len = 0;          // data field length to be deleted
-		uint16_t int_map, int_ttl;      // read them from packets
+		uint16_t int_map;
+		uint8_t  int_ttl;              // read them from packets
 		memcpy(&int_ttl, header + INT_HEADER_TTL_OFF, INT_HEADER_TTL_LEN);          // read INT.ttl from packet frame
 		memcpy(&int_map, header + INT_HEADER_MAPINFO_OFF, INT_HEADER_MAPINFO_LEN);  // read INT.mapInfo from packet frame
 
+        int_map = int_map & CPU_BASED_MAPINFO;
 
         if (int_map & (UINT16_C(1) << 0)) { // tsf: device_id, 4B
         	int_data_len += INT_DATA_DPID_LEN;
         }
 
-        if (int_map & (UINT16_C(1) << 1)) { // tsf: in_port, 1B
+        if (int_map & (UINT16_C(1) << 1)) { // tsf: in_port, 2B
         	int_data_len += INT_DATA_IN_PORT_LEN;
         }
 
-        if (int_map & (UINT16_C(1) << 2)) { // tsf: out_port, 1B
+        if (int_map & (UINT16_C(1) << 2)) { // tsf: out_port, 2B
         	int_data_len += INT_DATA_OUT_PORT_LEN;
         }
 
@@ -395,17 +413,28 @@ odp_pof_delete_field(struct dp_packet *packet, const struct ovs_key_delete_field
         	int_data_len += INT_DATA_INGRESS_TIME_LEN;
         }
 
-        if (int_map & (UINT16_C(1) << 4)) { // tsf: hop latency, 2B
+        if (int_map & (UINT16_C(1) << 4)) { // tsf: hop latency, 4B
         	int_data_len += INT_DATA_HOP_LATENCY_LEN;
         }
+
         if (int_map & (UINT16_C(1) << 5)) { // tsf: bandwidth, 4B
             int_data_len += INT_DATA_BANDWIDTH_LEN;
         }
+
         if (int_map & (UINT16_C(1) << 6)) { // lty: n_packets, 8B
             int_data_len += INT_DATA_N_PACKETS_LEN;
         }
+
         if (int_map & (UINT16_C(1) << 7)) { // lty: n_bytes, 8B
             int_data_len += INT_DATA_N_BYTES_LEN;
+        }
+
+        if (int_map & (UINT16_C(1) << 8)) { // tsf: queue_len, 4B
+            // not supported
+        }
+
+        if (int_map & (UINT16_C(1) << 9)) { // tsf: fwd_acts, 2B
+            int_data_len += INT_DATA_FWD_ACTS;
         }
 
         /* delete_field in act3. */
