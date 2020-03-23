@@ -162,12 +162,18 @@ uint8_t int_src_type_ttl[3] = {0x09, 0x08, 0x01};
 #define INT_DATA_BANDWIDTH_LEN       4
 #define INT_DATA_N_PACKETS_LEN       8
 #define INT_DATA_N_BYTES_LEN         8
+#define INT_DATA_QUEUE_LEN           4    /* not supported by ovs-pof */
+#define INT_DATA_FWD_ACTS            2
+
 /* tsf: invisible packet length. */
 #define INTER_FRAME_GAP              12  /* in bytes */
 #define PKT_PREAMBLE_SIZE             8  /* in bytes */
 #define ETHER_CRC_LEN                 4  /* in bytes */
 #define INVISIBLE_PKT_SIZE           24  /* in bytes, 12+8+4=24B */
-#define CPU_based_mapInfo            0xfeff
+
+#define CPU_BASED_MAPINFO            0x002f     /* the bitmap that ovs-pof supports */
+#define FLOW_BW                       1 /* ifdef, flow bandwidth; else, fixed 50ms to calculate port bandwidth */
+
 /* tsf: flag to determine whether to use 'key->offset' given by controller.
  *      used by odp_pof_add_field() and odp_pof_delete_field().
  * */
@@ -190,9 +196,9 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
 		memcpy(header + key->offset, key->value, key->len);
 	} else {   // 'add_dynamic_field' or 'add_int_field' action, fields come from data plane
 
-	    /* @param key->value[0] controller mapInfo. if is 0xff, then we read 'mapInfo' from packets
+	    /** @param key->value[0] controller mapInfo. if is 0xffff, then we read 'mapInfo' from packets
 	     * @param key->offset define where to insert INT data fields. determined by data plane or controller (see flag 'use_controller_offset').
-	     * @param key->len no meanings, instead of 'int_len' (auto-calculation)
+	     * @param key->len refers to N, which selects one every N packets.
 	     * */
 
 		uint32_t device_id = ntohl(key->device_id);
@@ -207,8 +213,10 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
 		uint16_t final_mapInfo = 0;                     // the final intent mapInfo
         uint16_t sampling_rate_N = key->len;           // the sampling rate defined by key->len ('N')
 		uint16_t int_type = 0;
+#ifdef FLOW_BW
         uint64_t start_times = 0, end_times = 0;
-		/* If controller_mapInfo is 0xff, which means we use dataplane's mapInfo.
+#endif
+		/* If controller_mapInfo is 0xffff, which means we use dataplane's mapInfo.
 		 * I finally decide to set 'int_offset' according to 'use_controller_flag'. */
 		if (controller_mapInfo == 0xffff) {
             header = dp_packet_data(packet);   // tsf: start of the original header
@@ -222,18 +230,27 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
 			}
 			/*VLOG_INFO("+++++++tsf odp_pof_add_field, f_mapInfo = %x, c_mapInfo=%x, int_type=%x", final_mapInfo, controller_mapInfo, int_type);*/
 		} else {
+
+		    /* tsf: sampling policy at src: 1/N. bd_info->sel_int_packets can be ignored. */
             INT_HEADER_PKT_CNT++;
             if (INT_HEADER_PKT_CNT % sampling_rate_N != 0) {
+#ifdef FLOW_BW
                 end_times = time_msec();
+#endif
                 return;
             }
             else {
+#ifdef FLOW_BW
                 start_times = time_msec();
+#endif
             }
-            bd_info->diff_time = end_times - start_times;
-            final_mapInfo = controller_mapInfo & CPU_based_mapInfo;
+#ifdef FLOW_BW
+            bd_info->diff_time = end_times - start_times; // tsf: the interval is used to calculate flow's bandwidth
+#endif
+
+            final_mapInfo = controller_mapInfo & CPU_BASED_MAPINFO;
             int_offset = (use_controller_offset ? int_offset : INT_HEADER_BASE);      // include type+ttl+mapInfo
-            /* tsf: we add mapInfo, 1B. 'Type + TTL' added by add_static_filed from controller. */
+            /* tsf: we add mapInfo, 2B. 'Type + TTL' added by controller. */
             int_len += (INT_HEADER_TYPE_LEN + INT_HEADER_TTL_LEN);
             memcpy(int_value, &int_src_type_ttl, int_len);
             memcpy(int_value + int_len, &final_mapInfo, INT_HEADER_MAPINFO_LEN);
@@ -244,6 +261,7 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
 		/* Check the numbers of set bits in final_mapInfo. If equal to 0, return directly.
 		 * Then, we add final_mapInfo to 'int_value' ahead when it comes from controller,
 		 * otherwise followed with INT data only (for data plane's mapInfo). */
+        final_mapInfo = final_mapInfo & CPU_BASED_MAPINFO;
 		if (get_set_bits_of_byte(final_mapInfo) == 0) {
 			/*VLOG_INFO("+++++++tsf odp_pof_add_field, return: int_type=%x", int_type);*/
 			return;
@@ -284,15 +302,8 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
         }
 
         if (final_mapInfo & (UINT16_C(1) << 5)) { // tsf: bandwidth computation insert, 4B
-//            if (!bd_info->comp_latch) {
-//            	// int_len calculated by the former code, '4' is bd len
-//            	bandwidth = (bd_info->n_bytes + (int_len+4)*bd_info->sel_int_packets) / (bd_info->diff_time * 1.0) * 8;  // Mbps
-//                VLOG_INFO("++++++tsf odp_pof_add_field: n_pkt=%d / %d, ori_plen=%d, int_len=%d, pkt_tsize=%d, d_time=%d us, bd=%f Mbps",
-//                        	         bd_info->n_packets, bd_info->sel_int_packets, dp_packet_size(packet), int_len+4, (bd_info->n_bytes +
-//                        	        		 int_len*bd_info->sel_int_packets), bd_info->diff_time, bandwidth);
-//            } // else keep static
             bandwidth = (bd_info->n_bytes + INVISIBLE_PKT_SIZE * bd_info->n_packets
-                        + (int_len + INT_DATA_BANDWIDTH_LEN) * bd_info->sel_int_packets) / (bd_info->diff_time * 1.0) * 8;  // Mbps
+                        + (int_len + INT_DATA_BANDWIDTH_LEN) * 1) / (bd_info->diff_time * 1.0) * 8;  // Mbps
             memcpy(int_value + int_len, &bandwidth, INT_DATA_BANDWIDTH_LEN);      // stored as float type
             int_len += INT_DATA_BANDWIDTH_LEN;
         }
