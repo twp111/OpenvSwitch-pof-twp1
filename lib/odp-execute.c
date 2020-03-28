@@ -172,7 +172,7 @@ uint8_t int_src_type_ttl[3] = {0x09, 0x08, 0x01};
 #define ETHER_CRC_LEN                 4  /* in bytes */
 #define INVISIBLE_PKT_SIZE           24  /* in bytes, 12+8+4=24B */
 
-#define CPU_BASED_MAPINFO            0x002f     /* the bitmap that ovs-pof supports */
+#define CPU_BASED_MAPINFO            0x02ff     /* the bitmap that ovs-pof supports */
 #define FLOW_BW                       1 /* ifdef, flow bandwidth; else, fixed 50ms to calculate port bandwidth */
 
 /* tsf: flag to determine whether to use 'key->offset' given by controller.
