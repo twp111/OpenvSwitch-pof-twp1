@@ -123,7 +123,7 @@ static uint8_t * uint8_to_arr(uint8_t uint8) {
     return arr;
 }
 
-static uint8_t get_set_bits_of_byte(uint8_t byte){
+static uint8_t get_set_bits_of_bytes(uint16_t byte){
 	uint8_t count = 0;
 	while (byte) {
 		count += byte & 1;
@@ -266,7 +266,7 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
 		 * Then, we add final_mapInfo to 'int_value' ahead when it comes from controller,
 		 * otherwise followed with INT data only (for data plane's mapInfo). */
         final_mapInfo = final_mapInfo & CPU_BASED_MAPINFO;
-		if (get_set_bits_of_byte(final_mapInfo) == 0) {
+		if (get_set_bits_of_bytes(final_mapInfo) == 0) {
 			/*VLOG_INFO("+++++++tsf odp_pof_add_field, return: int_type=%x", int_type);*/
 			return;
 		}
