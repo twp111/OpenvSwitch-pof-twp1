@@ -188,23 +188,24 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
 		memcpy(header + key->offset, key->value, key->len);
 	} else {   // 'add_dynamic_field' or 'add_int_field' action, fields come from data plane
 
-	    /* @param key->value[0] controller mapInfo. if is 0xff, then we read 'mapInfo' from packets
+	    /** @param key->value[0] controller mapInfo. if is 0xff, then we read 'mapInfo' from packets
 	     * @param key->offset define where to insert INT data fields. determined by data plane or controller (see flag 'use_controller_offset').
 	     * @param key->len no meanings, instead of 'int_len' (auto-calculation)
 	     * */
 
-		uint32_t device_id = ntohl(key->device_id);
-		uint32_t ingress_time__ = (uint32_t) ingress_time;
-		uint8_t in_port = key->in_port;
-		uint8_t out_port = key->out_port;
+        /* INT fields <off, len, mapInfo> */
+        uint16_t int_offset = key->offset;                // indicate where to insert
+        uint16_t int_len = 0;                          // indicate how many available bytes in int_value[]
+        uint8_t int_value[32];                         // should cover added fields.
+        uint8_t controller_mapInfo = key->value[0];    // the mapInfo comes from controller
+        uint8_t final_mapInfo = 0;                     // the final intent mapInfo
+        uint16_t int_type = 0;
 
-        uint16_t int_offset = key->len;
-		uint16_t int_len = 0;                          // indicate how many available bytes in int_value[]
-		uint8_t int_value[32];                         // should cover added fields.
-		uint8_t controller_mapInfo = key->value[0];    // the mapInfo comes from controller
-		uint8_t final_mapInfo = 0;                     // the final intent mapInfo
-
-		uint16_t int_type = 0;
+        /* INT metadata */
+        uint32_t device_id = ntohl(key->device_id);
+        uint32_t ingress_time__ = (uint32_t) ingress_time;
+        uint8_t in_port = key->in_port;
+        uint8_t out_port = key->out_port;
 
 		/* If controller_mapInfo is 0xff, which means we use dataplane's mapInfo.
 		 * I finally decide to set 'int_offset' according to 'use_controller_flag'. */
@@ -280,8 +281,9 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
 //                        	         bd_info->n_packets, bd_info->sel_int_packets, dp_packet_size(packet), int_len+4, (bd_info->n_bytes +
 //                        	        		 int_len*bd_info->sel_int_packets), bd_info->diff_time, bandwidth);
 //            } // else keep static
-            bandwidth = (bd_info->n_bytes + INVISIBLE_PKT_SIZE * bd_info->n_packets
-                        + (int_len + INT_DATA_BANDWIDTH_LEN) * bd_info->sel_int_packets) / (bd_info->diff_time * 1.0) * 8;  // Mbps
+//            bandwidth = (bd_info->n_bytes + INVISIBLE_PKT_SIZE * bd_info->n_packets
+//                        + (int_len + INT_DATA_BANDWIDTH_LEN) * bd_info->sel_int_packets) / (bd_info->diff_time * 1.0) * 8;  // Mbps
+            bandwidth = (bd_info->n_bytes + INVISIBLE_PKT_SIZE * bd_info->n_packets) / (bd_info->diff_time * 1.0) * 8;  // Mbps
             memcpy(int_value + int_len, &bandwidth, INT_DATA_BANDWIDTH_LEN);      // stored as float type
             int_len += INT_DATA_BANDWIDTH_LEN;
         }
