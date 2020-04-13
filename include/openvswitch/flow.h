@@ -64,11 +64,34 @@ const char *flow_tun_flag_to_string(uint32_t flags);
 /* Maximum number of supported MPLS labels. */
 #define FLOW_MAX_MPLS_LABELS 3
 
+/**
+ * tsf: forwarding behaviors (2B), bitmap and its field id.
+ */
+#define FWD_MOD_SIP_BITMAP              0x0001
+#define FWD_MOD_DIP_BITMAP              0x0002
+#define FWD_MOD_SMAC_BITMAP             0x0004
+#define FWD_MOD_DMAC_BITMAP             0x0008
+
+#define FWD_ALL_GROUP_MIRROR_BITMAP     0x0010
+#define FWD_DEL_INT_FIELDS_BITMAP       0x0020
+#define FWD_ADD_INT_FIELDS_BITMAP       0x0040
+
+#define FWD_MOD_SIP_FIELD_ID            0xff01
+#define FWD_MOD_DIP_FIELD_ID            0xff02
+#define FWD_MOD_SMAC_FIELD_ID           0xff04
+#define FWD_MOD_DMAC_FIELD_ID           0xff08
+
+#define FWD_ALL_GROUP_MIRROR_FIELD_ID   0xff10     // not used
+#define FWD_DEL_INT_HDR_FIELD_ID        0xffff     // -1
+#define FWD_ADD_INT_HDR_FIELD_ID        0xffff     // -1
+
 /* tsf: to store the In-Band-Telemetry data*/
 struct pof_metadata {
 	uint32_t in_port;            // input_port
 	uint32_t out_port;           // output port
-	uint64_t device_id;         // data_path id
+	uint64_t device_id;          // data_path id
+	uint16_t fwd_acts;           // farwarding behavior
+	uint8_t pad[6];
 };
 
 struct pof_flow {
@@ -87,7 +110,7 @@ struct pof_flow {
     uint8_t flag[POF_MAX_MATCH_FIELD_NUM];  // tsf: indicate the corresponding index for the stored fields to be processed
     struct pof_metadata telemetry;          // tsf: to store the INT meta_data
 
-    uint8_t pad_to_flow[POF_MAX_MATCH_FIELD_NUM][30];
+    uint8_t pad_to_flow[POF_MAX_MATCH_FIELD_NUM][29];
 };
 
 struct pof_fp_flow {
@@ -106,7 +129,8 @@ struct pof_fp_flow {
     uint32_t ct_mark;           /* Connection mark.*/
     uint8_t have_sel_group_action;  /* tsf: Used to tell packets to execute select Group action*/
     uint8_t sel_int_action;     /* tsf: Used to tell packets to execute INT add_field action. */
-    uint8_t pad1[2];            /* Pad to 64 bits. */
+    uint8_t have_all_group_mirror; /* tsf: mirror packets action flag. */
+    uint8_t pad1[1];            /* Pad to 64 bits. */
     ovs_u128 ct_label;          /* Connection label. */
     uint32_t conj_id;           /* Conjunction ID. */
     ofp_port_t actset_output;   /* Output port in action set. */

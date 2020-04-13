@@ -206,8 +206,9 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
 		uint32_t ingress_time__ = (uint32_t) ingress_time;
 		uint16_t in_port = (uint16_t) key->in_port;
 		uint16_t out_port = (uint16_t) key->out_port;
+		uint16_t fwd_acts = key->fwd_acts;
 
-        uint16_t int_offset = key->len;
+        uint16_t int_offset = INT_HEADER_DATA_OFF;
 		uint16_t int_len = 0;                          // indicate how many available bytes in int_value[]
 		uint8_t int_value[32];                         // should cover added fields.
 
@@ -327,7 +328,6 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
         }
 
         if (final_mapInfo & (UINT16_C(1) << 9)) {// tsf: fwd_acts, 2B
-            uint16_t fwd_acts = 0;  // TODO
             memcpy(int_value + int_len, &fwd_acts, INT_DATA_FWD_ACTS);
             int_len += INT_DATA_FWD_ACTS;
         }

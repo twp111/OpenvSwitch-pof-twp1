@@ -5662,6 +5662,7 @@ get_pof_add_field_key(const struct pof_flow *flow, struct ovs_key_add_field *eth
     	eth->device_id = flow->telemetry.device_id;
     	eth->in_port = flow->telemetry.in_port;
     	eth->out_port = flow->telemetry.out_port;
+    	eth->fwd_acts = flow->telemetry.fwd_acts;
     	/*VLOG_INFO("++++++tsf get_add_field_key:  eth->value[0](intent)=%d, device_id=%lx, in_port=%d, out_port=%d",
     			eth->value[0], eth->device_id, eth->in_port, eth->out_port);*/
     }
@@ -5690,6 +5691,7 @@ get_pof_add_field_mask(const struct pof_flow *flow, struct ovs_key_add_field *et
         eth->device_id = flow->telemetry.device_id;
         eth->in_port = flow->telemetry.in_port;
         eth->out_port = flow->telemetry.out_port;
+        eth->fwd_acts = flow->telemetry.fwd_acts;
         /*VLOG_INFO("++++++tsf get_add_field_key:  eth->value[0](intent)=%d, device_id=%lx, in_port=%d, out_port=%d",
                   eth->value[0], eth->device_id, eth->in_port, eth->out_port);*/
     }
@@ -5716,6 +5718,7 @@ put_pof_add_field_key(const struct ovs_key_add_field *eth, struct pof_flow *flow
         flow->telemetry.device_id = eth->device_id;
         flow->telemetry.in_port = eth->in_port;
         flow->telemetry.out_port = eth->out_port;
+        flow->telemetry.fwd_acts = eth->fwd_acts;
     }
 }
 

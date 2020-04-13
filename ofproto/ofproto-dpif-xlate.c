@@ -3704,6 +3704,7 @@ xlate_group_action__(struct xlate_ctx *ctx, struct group_dpif *group)
 
     switch (group_dpif_get_type(group)) {
     case OFPGT11_ALL:
+    	wc->masks.have_all_group_mirror = true;
     case OFPGT11_INDIRECT:
     	/*VLOG_INFO("++++++tsf xlate_group_action__: before xlate_all_group");*/
         xlate_all_group(ctx, group);     // tsf: supported by POF
@@ -4956,6 +4957,57 @@ recirc_for_mpls(const struct ofpact *a, struct xlate_ctx *ctx)
     ctx_trigger_freeze(ctx);
 }
 
+/**
+ * tsf: record the forwarding behavior when it lookups actions in flow entry.
+ * @param field_id specific ids defined in "flow.h"
+ * @param type ofpact_type
+ * @param fwd_acts 2B bitmap
+ */
+inline static void
+pof_fwd_acts_insert(const uint16_t *field_id, enum ofpact_type type, uint16_t *fwd_acts) {
+	switch (type) {
+        case OFPACT_MODIFY_FIELD: {
+            if (*field_id == FWD_MOD_SIP_FIELD_ID) {
+                *fwd_acts |= FWD_MOD_SIP_BITMAP;
+            }
+
+            if (*field_id == FWD_MOD_DIP_FIELD_ID) {
+                *fwd_acts |= FWD_MOD_DIP_BITMAP;
+            }
+
+            if (*field_id == FWD_MOD_SMAC_FIELD_ID) {
+                *fwd_acts |= FWD_MOD_SMAC_BITMAP;
+            }
+
+            if (*field_id == FWD_MOD_DMAC_FIELD_ID) {
+                *fwd_acts |= FWD_MOD_DMAC_BITMAP;
+            }
+        }
+            break;
+
+        case OFPACT_ADD_FIELD: {
+            if (*field_id == FWD_ADD_INT_HDR_FIELD_ID) {
+                *fwd_acts |= FWD_ADD_INT_FIELDS_BITMAP;
+            }
+        }
+            break;
+
+        case OFPACT_DELETE_FIELD: {
+            if (*field_id == FWD_DEL_INT_HDR_FIELD_ID) {
+                *fwd_acts |= FWD_DEL_INT_FIELDS_BITMAP;
+            }
+        }
+            break;
+
+        case OFPACT_GROUP: {
+            if (*field_id == true) {   // wc.masks->have_all_group_mirror flag.
+                *fwd_acts |= FWD_ALL_GROUP_MIRROR_BITMAP;
+            }
+        }
+            break;
+    }
+}
+
 static void
 pof_do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
                  struct xlate_ctx *ctx)
@@ -5063,6 +5115,8 @@ pof_do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             flow->value[action_num][0] = modify_field->increment;
             flow->mask[action_num][0] = 0xff;
 
+            pof_fwd_acts_insert(&flow->field_id[action_num], OFPACT_MODIFY_FIELD, &flow->telemetry.fwd_acts);
+
             action_num++;
         }
         break;
@@ -5080,6 +5134,8 @@ pof_do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
         	if (flow->field_id[action_num] == 0xffff) {  // tsf: execute add_dynamic_field, i.e. selective INT
         		wc->masks.sel_int_action = true;
         	}
+
+        	pof_fwd_acts_insert(&flow->field_id[action_num], OFPACT_ADD_FIELD, &flow->telemetry.fwd_acts);
 
         	memcpy(flow->value[action_num], add_field->tag_value, add_field->tag_len / 8);
         	memset(flow->mask[action_num], 0xff, add_field->tag_len / 8);
@@ -5102,15 +5158,18 @@ pof_do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             memset(flow->value[action_num], 0x00, sizeof(flow->value[action_num]));
             memset(flow->mask[action_num], 0x00, sizeof(flow->mask[action_num]));
             if (flow->len[action_num] == 0) { // POFVT_IMMEDIATE_NUM, will cut 32b to 16 b in commit_odp_actions()
-                memcpy(flow->value[action_num], &delete_field->tag_len.value, sizeof(delete_field->tag_len.value));
+            	flow->field_id[action_num] = 0;
+            	memcpy(flow->value[action_num], &delete_field->tag_len.value, sizeof(delete_field->tag_len.value));
                 memset(flow->mask[action_num], 0xff, sizeof(delete_field->tag_len.value));
                 /*VLOG_INFO("++++++tsf pof_do_xlate_actions offset=%d, len=%d", delete_field->tag_pos, delete_field->tag_len.value);*/
             } else {  // // POFVT_FIELD
+            	flow->field_id[action_num] = htons(delete_field->tag_len.field.field_id);
             	memcpy(flow->value[action_num], &delete_field->tag_len, sizeof(delete_field->tag_len));  // tsf: copy all union
             	memset(flow->mask[action_num], 0xff, sizeof(delete_field->tag_len));
             	/*pm = (struct pof_match *) flow->value[3];
             	VLOG_INFO("++++++tsf pof_do_xlate_actions offset=%d, len=%d", pm->offset/8, pm->len/8);*/
             }
+            pof_fwd_acts_insert(&flow->field_id[action_num], OFPACT_DELETE_FIELD, &flow->telemetry.fwd_acts);
             action_num++;
         }
         	break;
@@ -5124,6 +5183,7 @@ pof_do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
 
                 /* XXX: Terminates action list translation, but does not
                  * terminate the pipeline. */
+        	    pof_fwd_acts_insert(&wc->masks.have_all_group_mirror, OFPACT_GROUP, &flow->telemetry.fwd_acts);
         		return;
         	}
         	break;
