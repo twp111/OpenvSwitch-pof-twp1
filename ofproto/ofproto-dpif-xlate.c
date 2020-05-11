@@ -4964,7 +4964,7 @@ recirc_for_mpls(const struct ofpact *a, struct xlate_ctx *ctx)
  * @param fwd_acts 2B bitmap
  */
 inline static void
-pof_fwd_acts_insert(const uint16_t *field_id, enum ofpact_type type, uint16_t *fwd_acts) {
+pof_fwd_acts_insert(const uint16_t *field_id, enum ofpact_type type, uint32_t *fwd_acts) {
 	switch (type) {
         case OFPACT_MODIFY_FIELD: {
             if (*field_id == FWD_MOD_SIP_FIELD_ID) {
@@ -5115,7 +5115,7 @@ pof_do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             flow->value[action_num][0] = modify_field->increment;
             flow->mask[action_num][0] = 0xff;
 
-            pof_fwd_acts_insert(&flow->field_id[action_num], OFPACT_MODIFY_FIELD, &flow->telemetry.fwd_acts);
+            pof_fwd_acts_insert(&flow->field_id[action_num], a->type, &flow->telemetry.fwd_acts);
 
             action_num++;
         }
@@ -5135,7 +5135,7 @@ pof_do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
         		wc->masks.sel_int_action = true;
         	}
 
-        	pof_fwd_acts_insert(&flow->field_id[action_num], OFPACT_ADD_FIELD, &flow->telemetry.fwd_acts);
+        	pof_fwd_acts_insert(&flow->field_id[action_num], a->type, &flow->telemetry.fwd_acts);
 
         	memcpy(flow->value[action_num], add_field->tag_value, add_field->tag_len / 8);
         	memset(flow->mask[action_num], 0xff, add_field->tag_len / 8);
@@ -5169,7 +5169,7 @@ pof_do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             	/*pm = (struct pof_match *) flow->value[3];
             	VLOG_INFO("++++++tsf pof_do_xlate_actions offset=%d, len=%d", pm->offset/8, pm->len/8);*/
             }
-            pof_fwd_acts_insert(&flow->field_id[action_num], OFPACT_DELETE_FIELD, &flow->telemetry.fwd_acts);
+            pof_fwd_acts_insert(&flow->field_id[action_num], a->type, &flow->telemetry.fwd_acts);
             action_num++;
         }
         	break;
@@ -5183,7 +5183,7 @@ pof_do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
 
                 /* XXX: Terminates action list translation, but does not
                  * terminate the pipeline. */
-        	    pof_fwd_acts_insert(&wc->masks.have_all_group_mirror, OFPACT_GROUP, &flow->telemetry.fwd_acts);
+        	    pof_fwd_acts_insert(&wc->masks.have_all_group_mirror, a->type, &flow->telemetry.fwd_acts);
         		return;
         	}
         	break;

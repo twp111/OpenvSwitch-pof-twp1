@@ -154,17 +154,17 @@ int counter = 0;          // used to limit log rate
 uint8_t int_src_type_ttl[3] = {0x09, 0x08, 0x01};
 #define INT_TYPE_VAL             0x0908
 
-/* tsf: INT data len. */
+/* tsf: INT data byte len. */
 #define INT_DATA_DPID_LEN            4
-#define INT_DATA_IN_PORT_LEN         2
-#define INT_DATA_OUT_PORT_LEN        2
+#define INT_DATA_IN_PORT_LEN         4
+#define INT_DATA_OUT_PORT_LEN        4
 #define INT_DATA_INGRESS_TIME_LEN    8
 #define INT_DATA_HOP_LATENCY_LEN     4
 #define INT_DATA_BANDWIDTH_LEN       4
 #define INT_DATA_N_PACKETS_LEN       8
 #define INT_DATA_N_BYTES_LEN         8
 #define INT_DATA_QUEUE_LEN           4    /* not supported by ovs-pof */
-#define INT_DATA_FWD_ACTS            2
+#define INT_DATA_FWD_ACTS            4
 
 /* tsf: invisible packet length. */
 #define INTER_FRAME_GAP              12  /* in bytes */
@@ -203,10 +203,10 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
 	     * */
 
 		uint32_t device_id = ntohl((uint32_t) key->device_id);
-		uint32_t ingress_time__ = (uint32_t) ingress_time;
-		uint16_t in_port = (uint16_t) key->in_port;
-		uint16_t out_port = (uint16_t) key->out_port;
-		uint16_t fwd_acts = key->fwd_acts;
+		uint32_t ingress_time__ = (uint32_t) ingress_time;       // tsf: used to calculate delta_time
+		uint32_t in_port = key->in_port;
+		uint32_t out_port = key->out_port;
+		uint32_t fwd_acts = key->fwd_acts;
 
         uint16_t int_offset = INT_HEADER_DATA_OFF;
 		uint16_t int_len = 0;                          // indicate how many available bytes in int_value[]
@@ -278,13 +278,13 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
         	/*VLOG_INFO("++++++tsf odp_pof_add_field: device_id=%llx", htonl(device_id));*/
         }
 
-        if (final_mapInfo & (UINT16_C(1) << 1)) { // tsf: in_port, 2B
+        if (final_mapInfo & (UINT16_C(1) << 1)) { // tsf: in_port, 4B
         	memcpy(int_value + int_len, &in_port, INT_DATA_IN_PORT_LEN);
         	int_len += INT_DATA_IN_PORT_LEN;
         	/*VLOG_INFO("++++++tsf odp_pof_add_field: in_port=%llx", in_port);*/
         }
 
-        if (final_mapInfo & (UINT16_C(1) << 2)) { // tsf: out_port, 2B
+        if (final_mapInfo & (UINT16_C(1) << 2)) { // tsf: out_port, 4B
         	memcpy(int_value + int_len, &out_port, INT_DATA_OUT_PORT_LEN);
         	int_len += INT_DATA_OUT_PORT_LEN;
         	/*VLOG_INFO("++++++tsf odp_pof_add_field: out_port=%llx", out_port);*/
@@ -327,7 +327,7 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
             // not supported, do nothing
         }
 
-        if (final_mapInfo & (UINT16_C(1) << 9)) {// tsf: fwd_acts, 2B
+        if (final_mapInfo & (UINT16_C(1) << 9)) {// tsf: fwd_acts, 4B
             memcpy(int_value + int_len, &fwd_acts, INT_DATA_FWD_ACTS);
             int_len += INT_DATA_FWD_ACTS;
         }
@@ -401,11 +401,11 @@ odp_pof_delete_field(struct dp_packet *packet, const struct ovs_key_delete_field
         	int_data_len += INT_DATA_DPID_LEN;
         }
 
-        if (int_map & (UINT16_C(1) << 1)) { // tsf: in_port, 2B
+        if (int_map & (UINT16_C(1) << 1)) { // tsf: in_port, 4B
         	int_data_len += INT_DATA_IN_PORT_LEN;
         }
 
-        if (int_map & (UINT16_C(1) << 2)) { // tsf: out_port, 2B
+        if (int_map & (UINT16_C(1) << 2)) { // tsf: out_port, 4B
         	int_data_len += INT_DATA_OUT_PORT_LEN;
         }
 
@@ -433,7 +433,7 @@ odp_pof_delete_field(struct dp_packet *packet, const struct ovs_key_delete_field
             // not supported
         }
 
-        if (int_map & (UINT16_C(1) << 9)) { // tsf: fwd_acts, 2B
+        if (int_map & (UINT16_C(1) << 9)) { // tsf: fwd_acts, 4B
             int_data_len += INT_DATA_FWD_ACTS;
         }
 

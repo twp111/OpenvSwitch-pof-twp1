@@ -106,23 +106,27 @@ EXTRA_DIST = \
 	appveyor.yml \
 	boot.sh \
 	setup.sh \
-        unsetup.sh \
-        dpdk_setup.sh \
-        dpdk_unsetup.sh \
+	unsetup.sh \
+	dpdk_setup.sh \
+	dpdk_unsetup.sh \
 	.cproject \
 	.project \
-	.idea/vcs.xml \
 	.idea/OpenvSwitch-pof.iml \
+	.idea/codeStyles/Project.xml \
+	.idea/markdown-exported-files.xml \
+	.idea/markdown-navigator.xml \
+	.idea/markdown-navigator/profiles_settings.xml \
 	.idea/misc.xml \
 	.idea/modules.xml \
+	.idea/vcs.xml \
 	.idea/workspace.xml \
 	include/README.md \
 	OVS206.config \
 	OVS206.creator \
-        OVS206.creator.user \
+	OVS206.creator.user \
 	OVS206.files \
 	OVS206.includes \
-        lib/ofp-msgs.inc \
+	lib/ofp-msgs.inc \
 	build-aux/cccl \
 	build-aux/cksum-schema-check \
 	build-aux/calculate-schema-cksum \

@@ -90,8 +90,8 @@ struct pof_metadata {
 	uint32_t in_port;            // input_port
 	uint32_t out_port;           // output port
 	uint64_t device_id;          // data_path id
-	uint16_t fwd_acts;           // farwarding behavior
-	uint8_t pad[6];
+	uint32_t fwd_acts;           // farwarding behavior
+	uint8_t pad[4];
 };
 
 struct pof_flow {
