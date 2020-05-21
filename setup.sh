@@ -25,8 +25,8 @@ cd $OVS_DIR
 
 ## configure, can use '-march=native' accelerate ovs-pof packet processing
 #./configure --with-dpdk=$DPDK_BUILD
-# ./configure CFLAGS="-g -O0" --with-dpdk=$DPDK_BUILD  ## way1: use 'dpdk', with lower performance
-./configure CFLAGS="-g -O2 -march=native" --with-dpdk=$DPDK_BUILD  ## way2: use 'dpdk' and 'native' to accelerate processor, decreases hash times. with higher performance
+ ./configure CFLAGS="-g -O0" --with-dpdk=$DPDK_BUILD  ## way1: use 'dpdk', with lower performance
+#./configure CFLAGS="-g -O2 -march=native" --with-dpdk=$DPDK_BUILD  ## way2: use 'dpdk' and 'native' to accelerate processor, decreases hash times. with higher performance
 
 ## compilation and install
 make -j24
@@ -104,12 +104,12 @@ ovs-vsctl add-br br0 -- set bridge br0 datapath_type=netdev
 #ovs-vsctl set-controller br0 tcp:192.168.109.209:6666
 ovs-vsctl add-port br0 dpdk0 -- set Interface dpdk0 type=dpdk
 ovs-vsctl add-port br0 dpdk1 -- set Interface dpdk1 type=dpdk
-ovs-vsctl add-port br0 dpdk2 -- set Interface dpdk2 type=dpdk
+#ovs-vsctl add-port br0 dpdk2 -- set Interface dpdk2 type=dpdk
 #ovs-ofctl show br0
 sleep 1s
 
 ## set datapath-id of ovs, must be 8B decimal number, cannot omit zeros.
-ovs-vsctl set bridge br0 other-config:datapath-id=0000000000000002
+ovs-vsctl set bridge br0 other-config:datapath-id=0000000000000001
 
 #ovs-appctl -t ovs-vswitchd exit
 #ovs-vswitchd --pidfile
