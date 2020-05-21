@@ -348,10 +348,12 @@ struct ovs_key_add_field {
 
 	/* tsf: INT fields, bitmap in value[0], can be combined with more fields whose bit is 1. */
 	uint64_t device_id;  /* value[0]=0x01 */
-	uint8_t in_port;     /* value[0]=0x02 */
-	uint8_t out_port;    /* value[0]=0x04 */
+	uint32_t in_port;     /* value[0]=0x02 */
+	uint32_t out_port;    /* value[0]=0x04 */
 	/*uint64_t pre_time;*/   /* value[0]=0x08, get in odp_pof_add_field */
 	/*uint64_t now_time;*/   /* value[0]=0x10, get in odp_pof_add_field */
+
+	uint32_t fwd_acts;    /* forwarding behavior. */
 };
 
 struct ovs_key_delete_field {
