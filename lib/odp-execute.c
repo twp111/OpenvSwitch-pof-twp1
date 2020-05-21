@@ -132,15 +132,16 @@ static uint8_t get_set_bits_of_bytes(uint16_t byte){
 	return count;
 }
 
-float bandwidth = 0.0;    // initialized value, if change, else keep
 int counter = 0;          // used to limit log rate
 
 /* tsf: we define INT header in Byte: ETH + IP + INT (type_ttl_mapInfo_medata) + PAYLOAD. */
 #define ETH_HEADER_LEN              14
+#define ETH_TYPE_OFF                12
+#define ETH_TYPE_LEN                 2
 #define IPV4_HEADER_LEN             20
 #define IPV4_SRC_BASE               26
 #define INT_HEADER_BASE             34
-#define INT_HEADER_LEN               4
+#define INT_HEADER_LEN               5
 #define INT_HEADER_TYPE_OFF         34
 #define INT_HEADER_TYPE_LEN          2
 #define INT_HEADER_TTL_OFF          36
@@ -152,7 +153,10 @@ int counter = 0;          // used to limit log rate
 /* tsf: src header: type=0x0908, ttl=0x01 */
 #define INT_SRC_TYPE_TTL         0x090801
 uint8_t int_src_type_ttl[3] = {0x09, 0x08, 0x01};
-#define INT_TYPE_VAL             0x0908
+uint16_t INT_TYPE_VAL       =      0x0809;
+uint16_t ETH_TYPE_VAL       =      0x0008;   // network byte order
+
+#define MAX_INT_BYTE_LEN           200
 
 /* tsf: INT data byte len. */
 #define INT_DATA_DPID_LEN            4
@@ -173,7 +177,7 @@ uint8_t int_src_type_ttl[3] = {0x09, 0x08, 0x01};
 #define INVISIBLE_PKT_SIZE           24  /* in bytes, 12+8+4=24B */
 
 #define CPU_BASED_MAPINFO            0x02ff     /* the bitmap that ovs-pof supports */
-#define FLOW_BW                       1 /* ifdef, flow bandwidth; else, fixed 50ms to calculate port bandwidth */
+//#define FLOW_BW                       1 /* ifdef, flow bandwidth; else, fixed 50ms to calculate port bandwidth */
 
 /* tsf: flag to determine whether to use 'key->offset' given by controller.
  *      used by odp_pof_add_field() and odp_pof_delete_field().
@@ -203,17 +207,27 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
 	     * */
 
 		uint32_t device_id = ntohl((uint32_t) key->device_id);
-		uint32_t ingress_time__ = (uint32_t) ingress_time;       // tsf: used to calculate delta_time
-		uint32_t in_port = key->in_port;
-		uint32_t out_port = key->out_port;
-		uint32_t fwd_acts = key->fwd_acts;
+		uint32_t in_port = ntohl(key->in_port);
+		uint32_t out_port = ntohl(key->out_port);
+
+        uint32_t diff_time = 0;
+        uint32_t ingress_time__ = (uint32_t) ingress_time;       // tsf: used to calculate delta_time
+
+        float bandwidth = 0.0;    // initialized value, if change, else keep
+		uint64_t n_packets = ntohll(bd_info->n_packets);
+		uint64_t n_bytes = ntohll(bd_info->n_bytes);
+
+//		uint32_t queue_len = 0;
+		uint32_t fwd_acts = ntohl(key->fwd_acts);
 
         uint16_t int_offset = INT_HEADER_DATA_OFF;
 		uint16_t int_len = 0;                          // indicate how many available bytes in int_value[]
-		uint8_t int_value[32];                         // should cover added fields.
+		uint8_t int_value[MAX_INT_BYTE_LEN];           // should cover added fields.
 
-		uint16_t controller_mapInfo = key->value[1] << 8
-									+ key->value[0];    // the mapInfo comes from controller, 2B
+		int controller_mapInfo = (key->value[0] << 8)
+									+ key->value[1];    // the mapInfo comes from controller, 2B
+        /*VLOG_INFO("+++++++tsf odp_pof_add_field, v0:%x, v1:%x, ctl_info: %04x\n", key->value[0], key->value[1], controller_mapInfo);*/
+//        controller_mapInfo = ntohs(controller_mapInfo);
 		uint16_t final_mapInfo = 0;                     // the final intent mapInfo
 
         uint16_t sampling_rate_N = key->len;           // the sampling rate defined by key->len ('N')
@@ -238,6 +252,7 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
 
 		    /* tsf: sampling policy at src: 1/N. bd_info->sel_int_packets can be ignored. */
             INT_HEADER_PKT_CNT++;
+            /*VLOG_INFO("+++++++tsf odp_pof_add_field, controller_mapInfo:%x, cnt:%d\n", controller_mapInfo, INT_HEADER_PKT_CNT);*/
             if (INT_HEADER_PKT_CNT % sampling_rate_N != 0) {
 #ifdef FLOW_BW
                 end_times = time_msec();
@@ -258,7 +273,8 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
             /* tsf: we add mapInfo, 2B. 'Type + TTL' added by controller. */
             int_len += (INT_HEADER_TYPE_LEN + INT_HEADER_TTL_LEN);
             memcpy(int_value, &int_src_type_ttl, int_len);
-            memcpy(int_value + int_len, &final_mapInfo, INT_HEADER_MAPINFO_LEN);
+            uint16_t pkt_mapInfo = htons(final_mapInfo);
+            memcpy(int_value + int_len, &pkt_mapInfo, INT_HEADER_MAPINFO_LEN);
             int_len += INT_HEADER_MAPINFO_LEN;
             /*VLOG_INFO("++++++tsf odp_pof_add_field: mapInfo=%x", final_mapInfo);*/
 		}
@@ -272,38 +288,40 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
 			return;
 		}
 
+        /*VLOG_INFO("+++++++tsf odp_pof_add_field, controller_mapInfo:0x%02x, final_mapInfo:0x%02x\n", controller_mapInfo, final_mapInfo);*/
+
         if (final_mapInfo & (UINT16_C(1))) { // tsf: device_id, 4B
         	memcpy(int_value + int_len, &device_id, INT_DATA_DPID_LEN);
         	int_len += INT_DATA_DPID_LEN;
-        	/*VLOG_INFO("++++++tsf odp_pof_add_field: device_id=%llx", htonl(device_id));*/
+        	/*VLOG_INFO("++++++tsf odp_pof_add_field: device_id=0x%04llx", htonl(device_id));*/
         }
 
         if (final_mapInfo & (UINT16_C(1) << 1)) { // tsf: in_port, 4B
         	memcpy(int_value + int_len, &in_port, INT_DATA_IN_PORT_LEN);
         	int_len += INT_DATA_IN_PORT_LEN;
-        	/*VLOG_INFO("++++++tsf odp_pof_add_field: in_port=%llx", in_port);*/
+        	/*VLOG_INFO("++++++tsf odp_pof_add_field: in_port=0x%04llx", in_port);*/
         }
 
         if (final_mapInfo & (UINT16_C(1) << 2)) { // tsf: out_port, 4B
         	memcpy(int_value + int_len, &out_port, INT_DATA_OUT_PORT_LEN);
         	int_len += INT_DATA_OUT_PORT_LEN;
-        	/*VLOG_INFO("++++++tsf odp_pof_add_field: out_port=%llx", out_port);*/
+        	/*VLOG_INFO("++++++tsf odp_pof_add_field: out_port=0x%04lx", out_port);*/
         }
 
         if (final_mapInfo & (UINT16_C(1) << 3)) { // tsf: ingress_time, 8B
             ingress_time = htonll(ingress_time);
             memcpy(int_value + int_len, &ingress_time, INT_DATA_INGRESS_TIME_LEN);
         	int_len += INT_DATA_INGRESS_TIME_LEN;
-        	/*VLOG_INFO("++++++tsf odp_pof_add_field: ingress_time=%llx / %llx", ingress_time, ingress_time__);*/
+        	/*VLOG_INFO("++++++tsf odp_pof_add_field: ingress_time=0x%08llx / 0x%llx", ingress_time, ingress_time__);*/
         }
 
         if (final_mapInfo & (UINT16_C(1) << 4)) { // tsf: hop latency, 4B
 //        	uint64_t egress_time = (uint64_t) time_usec();             // monotonic timer
         	uint64_t egress_time = (uint64_t) time_wall_usec();        // current time
-        	uint32_t diff_time = ntohl((uint32_t) (egress_time - ingress_time__));  // for packet level
+        	diff_time = ntohl((uint32_t) (egress_time - ingress_time__));  // for packet level
         	memcpy(int_value + int_len, &diff_time, INT_DATA_HOP_LATENCY_LEN);
         	int_len += INT_DATA_HOP_LATENCY_LEN;
-        	/*VLOG_INFO("++++++tsf odp_pof_add_field: egress_time=%llx, diff_lantency=%d us", egress_time, htons(diff_time));*/
+        	/*VLOG_INFO("++++++tsf odp_pof_add_field: egress_time=0x%llx, diff_lantency= 0x%04lx / %d us", egress_time, diff_time, htonl(diff_time));*/
         }
 
         if (final_mapInfo & (UINT16_C(1) << 5)) { // tsf: bandwidth computation insert, 4B
@@ -311,16 +329,19 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
                         + (int_len + INT_DATA_BANDWIDTH_LEN) * 1) / (bd_info->diff_time * 1.0) * 8;  // Mbps
             memcpy(int_value + int_len, &bandwidth, INT_DATA_BANDWIDTH_LEN);      // stored as float type
             int_len += INT_DATA_BANDWIDTH_LEN;
+            /*VLOG_INFO("++++++tsf odp_pof_add_field: bandwidth: 0x%04x / %f Mbps", bandwidth, bandwidth);*/
         }
 
-        if (final_mapInfo & (UINT16_C(1) << 6)) { // lty: n_packets,8B 
-            memcpy(int_value + int_len, &(bd_info->n_packets), INT_DATA_N_PACKETS_LEN);
+        if (final_mapInfo & (UINT16_C(1) << 6)) { // lty: n_packets,8B
+            memcpy(int_value + int_len, &n_packets, INT_DATA_N_PACKETS_LEN);
             int_len += INT_DATA_N_PACKETS_LEN;
+            /*VLOG_INFO("++++++tsf odp_pof_add_field: n_packets: 0x%08x / %d p", n_packets, n_packets);*/
         }
 
         if (final_mapInfo & (UINT16_C(1) << 7)) {// lty: n_bytes, 8B
-            memcpy(int_value + int_len, &(bd_info->n_bytes), INT_DATA_N_BYTES_LEN);
+            memcpy(int_value + int_len, &n_bytes, INT_DATA_N_BYTES_LEN);
             int_len += INT_DATA_N_BYTES_LEN;
+            /*VLOG_INFO("++++++tsf odp_pof_add_field: n_bytes: 0x%08x / %d B", n_bytes, n_bytes);*/
         }
 
         if (final_mapInfo & (UINT16_C(1) << 8)) {// tsf: queue_len, 4B
@@ -330,6 +351,7 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
         if (final_mapInfo & (UINT16_C(1) << 9)) {// tsf: fwd_acts, 4B
             memcpy(int_value + int_len, &fwd_acts, INT_DATA_FWD_ACTS);
             int_len += INT_DATA_FWD_ACTS;
+            /*VLOG_INFO("++++++tsf odp_pof_add_field: fwd_acts: 0x%04x", fwd_acts);*/
         }
 
         /* Adjust counter's value to control log rate.*/
@@ -349,6 +371,9 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
         header = dp_packet_pof_resize_field(packet, int_len);
         memmove(header, header + int_len, int_offset);
         memcpy(header + int_offset, int_value, int_len);
+
+//        INT_TYPE_VAL = htons(INT_TYPE_VAL);
+        memcpy(header + ETH_TYPE_OFF, &INT_TYPE_VAL, ETH_TYPE_LEN);
 	}
 }
 
@@ -448,6 +473,9 @@ odp_pof_delete_field(struct dp_packet *packet, const struct ovs_key_delete_field
 act3:
 	memmove(header + len, header, offset);  // shift the packet's length=key->offset backward key->len bytes
 	dp_packet_pof_resize_field(packet, -len);
+
+//	ETH_TYPE_VAL = htons(ETH_TYPE_VAL);
+    memcpy(header + ETH_TYPE_OFF, &ETH_TYPE_VAL, ETH_TYPE_LEN);
 	/*VLOG_INFO("++++++tsf odp_pof_delete_field: after delete field 2, pkt_len=%d.", dp_packet_size(packet));*/
 }
 
