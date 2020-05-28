@@ -5137,8 +5137,8 @@ pof_do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
 
         	pof_fwd_acts_insert(&flow->field_id[action_num], a->type, &flow->telemetry.fwd_acts);
 
-        	memcpy(flow->value[action_num], add_field->tag_value, add_field->tag_len / 8);
-        	memset(flow->mask[action_num], 0xff, add_field->tag_len / 8);
+        	memcpy(flow->value[action_num], add_field->tag_value, POF_MAX_FIELD_LENGTH_IN_BYTE);
+        	memset(flow->mask[action_num], 0xff, POF_MAX_FIELD_LENGTH_IN_BYTE);
 
         	action_num++;
         }

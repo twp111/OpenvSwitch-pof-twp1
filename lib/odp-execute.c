@@ -224,13 +224,14 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
 		uint16_t int_len = 0;                          // indicate how many available bytes in int_value[]
 		uint8_t int_value[MAX_INT_BYTE_LEN];           // should cover added fields.
 
-		int controller_mapInfo = (key->value[0] << 8)
-									+ key->value[1];    // the mapInfo comes from controller, 2B
+		int controller_mapInfo = (key->value[0] << 8) + key->value[1];    // the mapInfo comes from controller, 2B
         /*VLOG_INFO("+++++++tsf odp_pof_add_field, v0:%x, v1:%x, ctl_info: %04x\n", key->value[0], key->value[1], controller_mapInfo);*/
 //        controller_mapInfo = ntohs(controller_mapInfo);
 		uint16_t final_mapInfo = 0;                     // the final intent mapInfo
 
         uint16_t sampling_rate_N = key->len;           // the sampling rate defined by key->len ('N')
+        /*VLOG_INFO("+++++++tsf odp_pof_add_field, N: %d\n", sampling_rate_N);*/
+
 		uint16_t int_type = 0;
 #ifdef FLOW_BW
         uint64_t start_times = 0, end_times = 0;
@@ -252,7 +253,8 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
 
 		    /* tsf: sampling policy at src: 1/N. bd_info->sel_int_packets can be ignored. */
             INT_HEADER_PKT_CNT++;
-            /*VLOG_INFO("+++++++tsf odp_pof_add_field, controller_mapInfo:%x, cnt:%d\n", controller_mapInfo, INT_HEADER_PKT_CNT);*/
+            /*VLOG_INFO("+++++++tsf odp_pof_add_field, controller_mapInfo:%x, cnt:%d, N:%d\n", controller_mapInfo, INT_HEADER_PKT_CNT, sampling_rate_N);*/
+
             if (INT_HEADER_PKT_CNT % sampling_rate_N != 0) {
 #ifdef FLOW_BW
                 end_times = time_msec();
