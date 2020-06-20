@@ -5659,7 +5659,7 @@ get_pof_add_field_key(const struct pof_flow *flow, struct ovs_key_add_field *eth
     } else {   // add INT fields which come from ovs, value[0] and value[1] stores the INT intent
 	   for (int i = 0; i < POF_MAX_FIELD_LENGTH_IN_BYTE; i++) {
 			eth->value[i] = flow->value[index][i];  // tsf: add 16 bytes most
-			V/*LOG_INFO("++++++tsf get_add_pof_field_key 2:  eth->value[%d]=%d", i, eth->value[i]);*/
+			/*VLOG_INFO("++++++tsf get_add_pof_field_key 2:  eth->value[%d]=%d", i, eth->value[i]);*/
 		}
     	eth->device_id = flow->telemetry.device_id;
     	eth->in_port = flow->telemetry.in_port;
