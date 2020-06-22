@@ -275,7 +275,7 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
             /* tsf: we add mapInfo, 2B. 'Type + TTL' added by controller. */
             int_len += (INT_HEADER_TYPE_LEN + INT_HEADER_TTL_LEN);
             memcpy(int_value, &int_src_type_ttl, int_len);
-            uint16_t pkt_mapInfo = htons(final_mapInfo);
+            uint16_t pkt_mapInfo = htons(controller_mapInfo);
             memcpy(int_value + int_len, &pkt_mapInfo, INT_HEADER_MAPINFO_LEN);
             int_len += INT_HEADER_MAPINFO_LEN;
             /*VLOG_INFO("++++++tsf odp_pof_add_field: mapInfo=%x", final_mapInfo);*/
