@@ -4964,44 +4964,53 @@ recirc_for_mpls(const struct ofpact *a, struct xlate_ctx *ctx)
  * @param fwd_acts 2B bitmap
  */
 inline static void
-pof_fwd_acts_insert(const uint16_t *field_id, enum ofpact_type type, uint32_t *fwd_acts) {
+pof_fwd_acts_insert(uint16_t field_id, enum ofpact_type type, uint32_t *fwd_acts) {
+    /*VLOG_INFO("pof_fwd_acts_insert 0, field_id: %x, fwd_acts: %08x\n", field_id, *fwd_acts);*/
+    field_id = ntohs(field_id);
 	switch (type) {
         case OFPACT_MODIFY_FIELD: {
-            if (*field_id == FWD_MOD_SIP_FIELD_ID) {
+            if (field_id == FWD_MOD_SIP_FIELD_ID) {
                 *fwd_acts |= FWD_MOD_SIP_BITMAP;
+                /*VLOG_INFO("pof_fwd_acts_insert 1, field_id: %x, fwd_acts 0: %08x\n", field_id, *fwd_acts);*/
             }
 
-            if (*field_id == FWD_MOD_DIP_FIELD_ID) {
+            if (field_id == FWD_MOD_DIP_FIELD_ID) {
                 *fwd_acts |= FWD_MOD_DIP_BITMAP;
+                /*VLOG_INFO("pof_fwd_acts_insert 2, field_id: %x, fwd_acts 0: %08x\n", field_id, *fwd_acts);*/
             }
 
-            if (*field_id == FWD_MOD_SMAC_FIELD_ID) {
+            if (field_id == FWD_MOD_SMAC_FIELD_ID) {
                 *fwd_acts |= FWD_MOD_SMAC_BITMAP;
+                /*VLOG_INFO("pof_fwd_acts_insert 3, field_id: %x, fwd_acts 0: %08x\n", field_id, *fwd_acts);*/
             }
 
-            if (*field_id == FWD_MOD_DMAC_FIELD_ID) {
+            if (field_id == FWD_MOD_DMAC_FIELD_ID) {
                 *fwd_acts |= FWD_MOD_DMAC_BITMAP;
+                /*VLOG_INFO("pof_fwd_acts_insert 4, field_id: %x, fwd_acts 0: %08x\n", field_id, *fwd_acts);*/
             }
         }
             break;
 
         case OFPACT_ADD_FIELD: {
-            if (*field_id == FWD_ADD_INT_HDR_FIELD_ID) {
+            if (field_id == FWD_ADD_INT_HDR_FIELD_ID) {
                 *fwd_acts |= FWD_ADD_INT_FIELDS_BITMAP;
+                /*VLOG_INFO("pof_fwd_acts_insert 5, field_id: %x, fwd_acts 0: %08x\n", field_id, *fwd_acts);*/
             }
         }
             break;
 
         case OFPACT_DELETE_FIELD: {
-            if (*field_id == FWD_DEL_INT_HDR_FIELD_ID) {
+            if (field_id == FWD_DEL_INT_HDR_FIELD_ID) {
                 *fwd_acts |= FWD_DEL_INT_FIELDS_BITMAP;
+                /*VLOG_INFO("pof_fwd_acts_insert 6, field_id: %x, fwd_acts 0: %08x\n", field_id, *fwd_acts);*/
             }
         }
             break;
 
         case OFPACT_GROUP: {
-            if (*field_id == true) {   // wc.masks->have_all_group_mirror flag.
+            if (field_id != 0) {   // wc.masks->have_all_group_mirror flag.
                 *fwd_acts |= FWD_ALL_GROUP_MIRROR_BITMAP;
+                /*VLOG_INFO("pof_fwd_acts_insert 7, field_id: %x, fwd_acts 0: %08x\n", field_id, *fwd_acts);*/
             }
         }
             break;
@@ -5031,6 +5040,7 @@ pof_do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
     const char *datapath_name = "br0";
     struct ofproto *ofproto = ofproto_lookup(datapath_name);
     flow->telemetry.device_id = ofproto->datapath_id;
+    uint32_t fwd_acts = 0x00;
 
     if (ovs_native_tunneling_is_on(ctx->xbridge->ofproto)) { //sqy notes: false
         tnl_neigh_snoop(flow, wc, ctx->xbridge->name);
@@ -5068,6 +5078,8 @@ pof_do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
         case OFPACT_OUTPUT:
         	/*VLOG_INFO("+++++++tsf pof_do_xlate_actions OFPACT_OUTPUT->type:%d, len:%d", a->type, a->len);*/
         	flow->telemetry.out_port = ofpact_get_OUTPUT(a)->port;
+        	flow->telemetry.fwd_acts |= fwd_acts;
+        	VLOG_INFO("pof_do_xlate_actions, fwd_acts: %08x\n", fwd_acts);
             xlate_output_action(ctx, ofpact_get_OUTPUT(a)->port,
                                 ofpact_get_OUTPUT(a)->max_len, true);
             break;
@@ -5115,7 +5127,8 @@ pof_do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             flow->value[action_num][0] = modify_field->increment;
             flow->mask[action_num][0] = 0xff;
 
-            pof_fwd_acts_insert(&flow->field_id[action_num], a->type, &flow->telemetry.fwd_acts);
+            /*VLOG_INFO("pof_do_xlate_actions, before pof_fwd_acts_insert, fwd_acts: %08x\n", fwd_acts);*/
+            pof_fwd_acts_insert(flow->field_id[action_num], a->type, &fwd_acts);
 
             action_num++;
         }
@@ -5135,7 +5148,7 @@ pof_do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
         		wc->masks.sel_int_action = true;
         	}
 
-        	pof_fwd_acts_insert(&flow->field_id[action_num], a->type, &flow->telemetry.fwd_acts);
+        	pof_fwd_acts_insert(flow->field_id[action_num], a->type, &fwd_acts);
 
         	memcpy(flow->value[action_num], add_field->tag_value, POF_MAX_FIELD_LENGTH_IN_BYTE);
         	memset(flow->mask[action_num], 0xff, POF_MAX_FIELD_LENGTH_IN_BYTE);
@@ -5169,7 +5182,7 @@ pof_do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             	/*pm = (struct pof_match *) flow->value[3];
             	VLOG_INFO("++++++tsf pof_do_xlate_actions offset=%d, len=%d", pm->offset/8, pm->len/8);*/
             }
-            pof_fwd_acts_insert(&flow->field_id[action_num], a->type, &flow->telemetry.fwd_acts);
+            pof_fwd_acts_insert(flow->field_id[action_num], a->type, &fwd_acts);
             action_num++;
         }
         	break;
@@ -5183,7 +5196,7 @@ pof_do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
 
                 /* XXX: Terminates action list translation, but does not
                  * terminate the pipeline. */
-        	    pof_fwd_acts_insert(&wc->masks.have_all_group_mirror, a->type, &flow->telemetry.fwd_acts);
+        	    pof_fwd_acts_insert(wc->masks.have_all_group_mirror, a->type, &fwd_acts);
         		return;
         	}
         	break;
