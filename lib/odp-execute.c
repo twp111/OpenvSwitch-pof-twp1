@@ -153,8 +153,10 @@ int counter = 0;          // used to limit log rate
 /* tsf: src header: type=0x0908, ttl=0x01 */
 #define INT_SRC_TYPE_TTL         0x090801
 uint8_t int_src_type_ttl[3] = {0x09, 0x08, 0x01};
-uint16_t INT_TYPE_VAL       =      0x0809;
-uint16_t ETH_TYPE_VAL       =      0x0008;   // network byte order
+uint16_t INT_TYPE_VAL_H       =      0x0908;
+uint16_t ETH_TYPE_VAL_H       =      0x0800;
+uint16_t INT_TYPE_VAL_N       =      0x0809;
+uint16_t ETH_TYPE_VAL_N       =      0x0008;   // network byte order
 
 #define MAX_INT_BYTE_LEN           200
 
@@ -245,9 +247,11 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
 			memcpy(&int_type, header + INT_HEADER_TYPE_OFF, INT_HEADER_TYPE_LEN);  // check
 			int_type = ntohs(int_type);
 
-			if ((int_type != INT_TYPE_VAL)) {
-				return;
-			}
+            final_mapInfo = ntohs(final_mapInfo);
+
+            if ((int_type != INT_TYPE_VAL_H)) {
+                return;
+            }
 			/*VLOG_INFO("+++++++tsf odp_pof_add_field, f_mapInfo = %x, c_mapInfo=%x, int_type=%x", final_mapInfo, controller_mapInfo, int_type);*/
 		} else {
 
@@ -375,7 +379,7 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
         memcpy(header + int_offset, int_value, int_len);
 
 //        INT_TYPE_VAL = htons(INT_TYPE_VAL);
-        memcpy(header + ETH_TYPE_OFF, &INT_TYPE_VAL, ETH_TYPE_LEN);
+        memcpy(header + ETH_TYPE_OFF, &INT_TYPE_VAL_N, ETH_TYPE_LEN);
 	}
 }
 
@@ -477,7 +481,7 @@ act3:
 	dp_packet_pof_resize_field(packet, -len);
 
 //	ETH_TYPE_VAL = htons(ETH_TYPE_VAL);
-    memcpy(header + ETH_TYPE_OFF, &ETH_TYPE_VAL, ETH_TYPE_LEN);
+    memcpy(header + ETH_TYPE_OFF, &ETH_TYPE_VAL_N, ETH_TYPE_LEN);
 	/*VLOG_INFO("++++++tsf odp_pof_delete_field: after delete field 2, pkt_len=%d.", dp_packet_size(packet));*/
 }
 
