@@ -65,16 +65,16 @@ const char *flow_tun_flag_to_string(uint32_t flags);
 #define FLOW_MAX_MPLS_LABELS 3
 
 /**
- * tsf: forwarding behaviors (2B), bitmap and its field id.
+ * tsf: forwarding behaviors (4B), bitmap and its field id.
  */
-#define FWD_MOD_SIP_BITMAP              0x0001
-#define FWD_MOD_DIP_BITMAP              0x0002
-#define FWD_MOD_SMAC_BITMAP             0x0004
-#define FWD_MOD_DMAC_BITMAP             0x0008
+#define FWD_MOD_SIP_BITMAP              0x00000001
+#define FWD_MOD_DIP_BITMAP              0x00000002
+#define FWD_MOD_SMAC_BITMAP             0x00000004
+#define FWD_MOD_DMAC_BITMAP             0x00000008
 
-#define FWD_ALL_GROUP_MIRROR_BITMAP     0x0010
-#define FWD_DEL_INT_FIELDS_BITMAP       0x0020
-#define FWD_ADD_INT_FIELDS_BITMAP       0x0040
+#define FWD_ALL_GROUP_MIRROR_BITMAP     0x00000010
+#define FWD_DEL_INT_FIELDS_BITMAP       0x00000020
+#define FWD_ADD_INT_FIELDS_BITMAP       0x00000040
 
 #define FWD_MOD_SIP_FIELD_ID            0xff01
 #define FWD_MOD_DIP_FIELD_ID            0xff02
