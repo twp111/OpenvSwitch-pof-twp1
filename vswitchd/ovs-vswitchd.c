@@ -24,6 +24,7 @@
 #ifdef HAVE_MLOCKALL
 #include <sys/mman.h>
 #endif
+#include <pthread.h>
 
 #include "bridge.h"
 #include "command-line.h"
@@ -59,6 +60,90 @@ static unixctl_cb_func ovs_vswitchd_exit;
 
 static char *parse_options(int argc, char *argv[], char **unixctl_path);
 OVS_NO_RETURN static void usage(void);
+
+/* defined by tsf, called by ovs-vswitchd.c/main() */
+#define BER_TCP_SOCK_CLIENT true
+#define SERVER_ADDR "192.168.109.214"
+#define SOCKET_PORT 2020
+#define MAXLINE 1024
+bool BER_TCP_SOCK_CLIENT_RUN_ONCE = true;   // tsf: after init, it turns to 'false'
+extern double ber;    // collect and change value every second. collect period: 1s, defined by sock_server
+
+pthread_t ber_collector_thread;
+
+// when interrupted, call this method
+void quit(int signal) {
+    printf("Socket teardowns!\n");
+    exit(EXIT_SUCCESS);
+}
+
+static int setup_ber_sock_collector() {
+    int clientfd, sockfd;
+    char buf_recv[MAXLINE] = {0};
+
+    size_t input_len = 0;
+    size_t recv_len = 0;
+
+    int connect_num = 0;
+    int CONNECT_NUM_CEIL = 1000;  // at most try CEIL times
+
+    struct sockaddr_in client;
+
+    VLOG_INFO("++++ tsf ber_sock_collector, try to connect server <%s/%d> ...\n", SERVER_ADDR, SOCKET_PORT);
+
+    if ((clientfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+//        VLOG_INFO("++++ tsf ber_sock_collector, create socket failed. exit.");
+        return -1;
+    }
+
+    bzero(&client, sizeof(client));
+    client.sin_family = AF_INET;
+    client.sin_port = htons(SOCKET_PORT);
+    inet_pton(AF_INET, SERVER_ADDR, &client.sin_addr);
+
+    re_connect:
+    if ((sockfd = connect(clientfd, (struct sockaddr *) &client, sizeof(client))) < 0) {
+//        VLOG_INFO("++++ tsf ber_sock_collector, connect socket failed. try to reconnect.\n");
+        connect_num++;
+        sleep(1);
+        if (connect_num < CONNECT_NUM_CEIL) {
+            goto re_connect;
+        }
+    }
+    VLOG_INFO("++++ tsf ber_sock_collector, socket connected. \n");
+
+    int recv_num = 0;
+    while (true) {
+        signal(SIGUSR1, quit);
+
+        /* RECEIVE DATA FROM CLIENT. */
+        recv_len = read(clientfd, buf_recv, MAXLINE);
+        if (recv_len <= 0) {
+            VLOG_INFO("++++ tsf ber_sock_collector, sock teardown.");
+            break;
+        }
+
+        /* ber received. */
+        recv_num++;
+
+        ber = strtod(buf_recv, NULL);
+//        VLOG_INFO("++++ tsf ber_sock_collector, recv_num: %d, ber: %.16g\n", recv_num, ber);
+
+        /* ack sent. */
+        char msg[50] = "ok, ack: ";
+        char recv_num_str[40] = "";    /* 32 most. int type = 32 bit. */
+        sprintf(recv_num_str, "%d", recv_num);
+        strcat(msg, recv_num_str);
+        send(clientfd, msg, strlen(msg), 0);
+        bzero(buf_recv, MAXLINE);
+    }
+
+    close(clientfd);
+
+    return 0;
+
+}
+
 
 int
 main(int argc, char *argv[])
@@ -124,7 +209,19 @@ main(int argc, char *argv[])
         if (should_service_stop()) {
             exiting = true;
         }
+
+        /* only run thread once */
+        if (BER_TCP_SOCK_CLIENT_RUN_ONCE) {
+            int ret = pthread_create(&ber_collector_thread, NULL, (void *) &setup_ber_sock_collector, NULL);
+            if (ret == 0) {
+//                pthread_join(ber_collector_thread, NULL);
+                BER_TCP_SOCK_CLIENT_RUN_ONCE = false;
+//                VLOG_INFO("++++tsf in main, setup_ber_sock_collector thread start.");
+            }
+        }
+
     }
+    pthread_exit(NULL);
     bridge_exit();
     unixctl_server_destroy(unixctl);
     service_stop();

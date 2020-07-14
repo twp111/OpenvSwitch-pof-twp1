@@ -161,16 +161,19 @@ uint16_t ETH_TYPE_VAL_N       =      0x0008;   // network byte order
 #define MAX_INT_BYTE_LEN           200
 
 /* tsf: INT data byte len. */
-#define INT_DATA_DPID_LEN            4
-#define INT_DATA_IN_PORT_LEN         4
-#define INT_DATA_OUT_PORT_LEN        4
-#define INT_DATA_INGRESS_TIME_LEN    8
-#define INT_DATA_HOP_LATENCY_LEN     4
-#define INT_DATA_BANDWIDTH_LEN       4
-#define INT_DATA_N_PACKETS_LEN       8
-#define INT_DATA_N_BYTES_LEN         8
-#define INT_DATA_QUEUE_LEN           4    /* not supported by ovs-pof */
-#define INT_DATA_FWD_ACTS            4
+#define INT_DATA_DPID_LEN            4   /* bit 0 */
+#define INT_DATA_IN_PORT_LEN         4   /* bit 1 */
+#define INT_DATA_OUT_PORT_LEN        4   /* bit 2 */
+#define INT_DATA_INGRESS_TIME_LEN    8   /* bit 3 */
+#define INT_DATA_HOP_LATENCY_LEN     4   /* bit 4 */
+#define INT_DATA_BANDWIDTH_LEN       4   /* bit 5 */
+#define INT_DATA_N_PACKETS_LEN       8   /* bit 6 */
+#define INT_DATA_N_BYTES_LEN         8   /* bit 7 */
+#define INT_DATA_QUEUE_LEN           4   /* bit 8, not supported by ovs-pof */
+#define INT_DATA_FWD_ACTS_LEN        4   /* bit 9 */
+#define INT_DATA_BER_LEN             8   /* bit 10, optical layer data. */
+
+#define CPU_BASED_MAPINFO            0x06ff     /* the bitmap that ovs-pof supports */
 
 /* tsf: invisible packet length. */
 #define INTER_FRAME_GAP              12  /* in bytes */
@@ -178,7 +181,6 @@ uint16_t ETH_TYPE_VAL_N       =      0x0008;   // network byte order
 #define ETHER_CRC_LEN                 4  /* in bytes */
 #define INVISIBLE_PKT_SIZE           24  /* in bytes, 12+8+4=24B */
 
-#define CPU_BASED_MAPINFO            0x02ff     /* the bitmap that ovs-pof supports */
 //#define FLOW_BW                       1 /* ifdef, flow bandwidth; else, fixed 50ms to calculate port bandwidth */
 
 /* tsf: flag to determine whether to use 'key->offset' given by controller.
@@ -186,6 +188,8 @@ uint16_t ETH_TYPE_VAL_N       =      0x0008;   // network byte order
  * */
 bool use_controller_offset = false;
 uint64_t INT_HEADER_PKT_CNT = 0;       // count packets for N to insert INT header
+
+double ber = 0;    /* optical layer data. global extern variable, called in ovs-vswitchd.c. */
 
 static void
 odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
@@ -221,6 +225,7 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
 
 //		uint32_t queue_len = 0;
 		uint32_t fwd_acts = ntohl(key->fwd_acts);
+//        extern double ber;    /* optical layer data. */
 
         uint16_t int_offset = INT_HEADER_DATA_OFF;
 		uint16_t int_len = 0;                          // indicate how many available bytes in int_value[]
@@ -355,9 +360,14 @@ odp_pof_add_field(struct dp_packet *packet, const struct ovs_key_add_field *key,
         }
 
         if (final_mapInfo & (UINT16_C(1) << 9)) {// tsf: fwd_acts, 4B
-            memcpy(int_value + int_len, &fwd_acts, INT_DATA_FWD_ACTS);
-            int_len += INT_DATA_FWD_ACTS;
+            memcpy(int_value + int_len, &fwd_acts, INT_DATA_FWD_ACTS_LEN);
+            int_len += INT_DATA_FWD_ACTS_LEN;
             /*VLOG_INFO("++++++tsf odp_pof_add_field: fwd_acts: 0x%04x", fwd_acts);*/
+        }
+
+        if (final_mapInfo & (UINT16_C(1) << 10)) {// tsf: ber, 8B, double
+            memcpy(int_value + int_len, &ber, INT_DATA_BER_LEN);
+            int_len += INT_DATA_BER_LEN;
         }
 
         /* Adjust counter's value to control log rate.*/
@@ -465,7 +475,11 @@ odp_pof_delete_field(struct dp_packet *packet, const struct ovs_key_delete_field
         }
 
         if (int_map & (UINT16_C(1) << 9)) { // tsf: fwd_acts, 4B
-            int_data_len += INT_DATA_FWD_ACTS;
+            int_data_len += INT_DATA_FWD_ACTS_LEN;
+        }
+
+        if (int_map & (UINT16_C(1) << 10)) { // tsf: ber, 8B, double
+            int_data_len += INT_DATA_BER_LEN;
         }
 
         /* delete_field in act3. */
