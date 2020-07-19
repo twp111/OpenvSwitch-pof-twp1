@@ -4190,7 +4190,7 @@ xlate_output_action(struct xlate_ctx *ctx,
     	 *      2. If we want to packet-in the whole packet, just set 'ctx->need_trunc' as 'false'. Then,
     	 *         no need to configure any parameter.
     	 **/
-    	ctx->need_trunc = true;
+    	ctx->need_trunc = false;
         execute_controller_action(ctx, max_len,
                                   (ctx->in_group ? OFPR_GROUP
                                    : ctx->in_action_set ? OFPR_ACTION_SET
