@@ -111,15 +111,6 @@ EXTRA_DIST = \
 	dpdk_unsetup.sh \
 	.cproject \
 	.project \
-	.idea/OpenvSwitch-pof.iml \
-	.idea/codeStyles/Project.xml \
-	.idea/markdown-exported-files.xml \
-	.idea/markdown-navigator.xml \
-	.idea/markdown-navigator/profiles_settings.xml \
-	.idea/misc.xml \
-	.idea/modules.xml \
-	.idea/vcs.xml \
-	.idea/workspace.xml \
 	include/README.md \
 	OVS206.config \
 	OVS206.creator \
