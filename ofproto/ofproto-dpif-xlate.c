@@ -4657,6 +4657,7 @@ freeze_unroll_actions(const struct ofpact *a, const struct ofpact *end,
         case OFPACT_MODIFY_FIELD: /* tsf */
         case OFPACT_ADD_FIELD:  /* tsf */
         case OFPACT_DELETE_FIELD:  /* tsf */
+        case OFPACT_CALCULATE_CHECKSUM:
         case OFPACT_STACK_PUSH:
         case OFPACT_STACK_POP:
         case OFPACT_LEARN:
@@ -5017,6 +5018,153 @@ pof_fwd_acts_insert(uint16_t field_id, enum ofpact_type type, uint32_t *fwd_acts
     }
 }
 
+#define POF_MOVE_BIT_LEFT(x,n)              ((x) << (n))
+#define POF_MOVE_BIT_RIGHT(x,n)             ((x) >> (n))
+#define POF_BITNUM_IN_BYTE                  (8)
+
+
+
+
+
+void pofbf_copy_bit(const uint8_t *data_ori, uint8_t *data_res, uint16_t offset_b, uint16_t len_b){
+    uint32_t process_len_b = 0, offset_b_x;
+    uint16_t offset_B;
+    uint8_t  *ptr;
+
+    if(NULL==data_ori || NULL==data_res){
+        return;
+    }
+
+    offset_B = (uint16_t)(offset_b / 8);
+    offset_b_x = offset_b % 8;
+    ptr = (uint8_t *)(data_ori + offset_B);
+
+    while(process_len_b < len_b){
+        *(data_res++) = POF_MOVE_BIT_LEFT(*ptr, offset_b_x) \
+            | POF_MOVE_BIT_RIGHT(*(++ptr), 8 - offset_b_x);
+        process_len_b += 8;
+    }
+
+    data_res--;
+    *data_res = *data_res & POF_MOVE_BIT_LEFT(0xff, process_len_b - len_b);
+
+    return;
+}
+
+void pofbf_cover_bit(uint8_t *data_ori, const uint8_t *value, uint16_t pos_b, uint16_t len_b){
+    uint32_t process_len_b = 0;
+    uint16_t pos_b_x, len_B, after_len_b_x;
+    uint8_t *ptr;
+
+    pos_b_x = pos_b % 8;
+    len_B = (uint16_t)((len_b - 1) / 8 + 1);
+    after_len_b_x = (len_b + pos_b - 1) % 8 + 1;
+    ptr = data_ori + (uint16_t)(pos_b / 8);
+
+    if(len_b <= (8 - pos_b_x)){
+        *ptr = (*ptr & POF_MOVE_BIT_LEFT(0xff, (8-pos_b_x)) \
+            | (POF_MOVE_BIT_RIGHT(*value, pos_b_x) & POF_MOVE_BIT_LEFT(0xff, 8-after_len_b_x)) \
+            | (*ptr & POF_MOVE_BIT_RIGHT(0xff, after_len_b_x)));
+        return;
+    }
+
+    *ptr = *ptr & POF_MOVE_BIT_LEFT(0xff, (8-pos_b_x)) \
+        | POF_MOVE_BIT_RIGHT(*value, pos_b_x);
+
+    process_len_b = 8 - pos_b_x;
+    while(process_len_b < (len_b-8)){
+        *(++ptr) = POF_MOVE_BIT_LEFT(*value, 8-pos_b_x) | POF_MOVE_BIT_RIGHT(*(++value), pos_b_x);
+        process_len_b += 8;
+    }
+
+    *(ptr+1) = (POF_MOVE_BIT_LEFT(*value, 8-pos_b_x) | POF_MOVE_BIT_RIGHT(*(++value), pos_b_x) \
+        & POF_MOVE_BIT_LEFT(0xff, 8 - (len_b - process_len_b))) \
+        | (*(ptr+1) & POF_MOVE_BIT_RIGHT(0xff, len_b - process_len_b));
+
+    return;
+}
+
+/**********************************************************************
+ * Make the piece of packet to be zero.
+ * Form:     pofdp_bzero_bit(uint8_t *data, uint16_t pos_b, uint16_t len_b)
+ * Input:    packet, start position(bit), length(bit)
+ * Output:   packet
+ * Return:   POF_OK or Error code
+ * Discribe: This function makes the piece of packet with pos_b and len_b
+ *           to be zero. The units of pos_b and len_b both are BIT.
+ *********************************************************************/
+static uint32_t bzero_bit(uint8_t *data, uint16_t pos_b, uint16_t len_b){
+    uint32_t ret;
+    uint16_t len_B;
+    uint8_t  *zero;
+
+    if((pos_b % POF_BITNUM_IN_BYTE == 0) && (len_b % POF_BITNUM_IN_BYTE == 0)){
+        memset(data + pos_b / POF_BITNUM_IN_BYTE, 0, len_b / POF_BITNUM_IN_BYTE);
+        return 0;
+    }
+    //len_B = POF_BITNUM_TO_BYTENUM_CEIL(len_b);
+    //POF_MALLOC_SAFE_RETURN(zero, len_B, POF_ERROR);twp:对此处的理解是保证地址稳定，牵扯的函数太多了，不好移植就删了
+    pofbf_cover_bit(data, zero, pos_b, len_b);
+
+    free(zero);
+    return 0;
+}
+
+
+static uint32_t checksum(uint8_t *data, \
+                         uint64_t *value, \
+                         uint16_t pos_b, \
+                         uint16_t len_b, \
+                         uint16_t cs_len_b)
+{
+    uint64_t *value_temp, threshold = 1;
+    uint32_t ret;
+    uint16_t cal_num, i;
+    uint8_t  data_temp[8] = {0};
+
+    cal_num = len_b / cs_len_b;
+    value_temp = (uint64_t *)data_temp;
+
+    for(i=0; i<cs_len_b; i++){
+        threshold *= 2;
+    }
+
+    for(i=0; i<cal_num; i++){
+        memset(data_temp, 0, sizeof(data_temp));
+        pofbf_copy_bit(data, data_temp, pos_b + i*cs_len_b, cs_len_b);
+
+        ntohll(*value_temp);
+        *value_temp = ~*value_temp;
+        *value_temp = POF_MOVE_BIT_RIGHT(*value_temp, 64 - cs_len_b);
+
+        *value += *(value_temp);
+        if(*value >= threshold){
+            *value = *value - threshold + 1;
+        }
+    }
+
+    *value = POF_MOVE_BIT_LEFT(*value, 64 - cs_len_b);
+    ntohll(*value);
+    return 0;
+}
+static void
+CALCULATE_CHECKSUM(uint8_t *checksum_buf, uint8_t *cal_buf, \
+        uint16_t cal_pos_b, uint16_t cal_len_b, uint16_t cs_pos_b, uint16_t cs_len_b)
+{
+    //VLOG_INFO("++++++twp encode_CALCULATE_CHECKSUM: start");
+
+    uint64_t checksum_value = 0;
+    uint32_t ret;
+    ret = bzero_bit(checksum_buf, cs_pos_b, cs_len_b);
+    //POF_CHECK_RETVALUE_RETURN_NO_UPWARD(ret); this place in order to ensure the safe of memory
+    ret = checksum(cal_buf, &checksum_value, cal_pos_b, cal_len_b, cs_len_b);
+    // POF_CHECK_RETVALUE_RETURN_NO_UPWARD(ret);
+    pofbf_cover_bit(checksum_buf, (uint8_t *)&checksum_value, cs_pos_b, cs_len_b);
+
+    //VLOG_INFO("++++++twp encode_CALCULATE_CHECKSUM: end");
+
+}
+
 static void
 pof_do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
                  struct xlate_ctx *ctx)
@@ -5054,6 +5202,7 @@ pof_do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
     const struct ofpact_metadata *metadata;
     const struct ofpact_set_field *set_field;
     const struct ofpact_add_field *add_field;
+    const struct ofpact_calculate_checksum *calculate_checksum;
     const struct ofpact_drop *drop;
     const struct ofpact_modify_field *modify_field;
     const struct ofpact_delete_field *delete_field;
@@ -5130,6 +5279,41 @@ pof_do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             /*VLOG_INFO("pof_do_xlate_actions, before pof_fwd_acts_insert, fwd_acts: %08x\n", fwd_acts);*/
             pof_fwd_acts_insert(flow->field_id[action_num], a->type, &fwd_acts);
 
+            action_num++;
+        }
+        break;
+
+        case OFPACT_CALCULATE_CHECKSUM:{
+          //  VLOG_INFO("+++++++twp pof_do_xlate_actions OFPACT_CALCULATE_CHECKSUM->type:%d, len:%d", a->type, a->len);
+            uint32_t ret;
+            calculate_checksum=ofpact_get_CALCULATE_CHECKSUM(a);
+            flow->offset[action_num]=htons(calculate_checksum->checksum_pos);         //the position of checksum field
+            flow->field_id[action_num]=htons(calculate_checksum->checksum_len);     //checksum length
+            flow->len[action_num]=htons(calculate_checksum->cal_len);               //The length of data to be calculated
+            //because the type of cal_startpos is uint_16 and value is the only position to store date,so take this way to store
+            //because 'htons' so first to store cal_startpos%256
+            flow->value[action_num][0]=htons(calculate_checksum->cal_startpos%256);
+            flow->value[action_num][1]=htons(calculate_checksum->cal_startpos/256);   //The start position of data to be calculated
+
+            flow->value[action_num][2]=calculate_checksum->checksum_pos_type;
+            flow->value[action_num][3]=calculate_checksum->cal_startpos_type;
+            flow->flag[action_num] =OFPACT_CALCULATE_CHECKSUM;
+
+            if(calculate_checksum->checksum_pos_type==0){
+                memset(flow->mask[action_num], 0xff, POF_MAX_FIELD_LENGTH_IN_BYTE);
+            }
+            else{
+                // TO Do
+            }
+            if(calculate_checksum->cal_startpos_type==0){
+                memset(flow->mask[action_num], 0xff, POF_MAX_FIELD_LENGTH_IN_BYTE);
+            }
+            else{
+                // TO DO
+            }
+            CALCULATE_CHECKSUM(&calculate_checksum->checksum_pos_type, &calculate_checksum->cal_startpos_type,
+                               calculate_checksum->cal_startpos, calculate_checksum->cal_len,
+                               calculate_checksum->checksum_pos, calculate_checksum->checksum_len);
             action_num++;
         }
         break;

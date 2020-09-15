@@ -120,6 +120,9 @@ enum ofp_raw_action_type {
     /* OF1.0+(5): struct ofp10_action_delete_field. */
     OFPAT_RAW10_DELETE_FIELD,
 
+    /* OF1.0(28): struct ofp10_action_calculate_checksum. */
+    OFPAT_RAW10_CALCULATE_CHECKSUM,
+
     /* OF1.0(25): uint16_t. */
     OFPAT_RAW10_SET_VLAN_VID,
     /* OF1.0(2): uint8_t. */
@@ -429,6 +432,7 @@ ofpact_next_flattened(const struct ofpact *ofpact)
     case OFPACT_MODIFY_FIELD:  /* tsf: add OFPACT_MODIFY_FIELD */
     case OFPACT_ADD_FIELD:  /* tsf */
     case OFPACT_DELETE_FIELD: /* tsf */
+    case OFPACT_CALCULATE_CHECKSUM:/*twp*/
     case OFPACT_SET_MPLS_LABEL:
     case OFPACT_SET_MPLS_TC:
     case OFPACT_SET_MPLS_TTL:
@@ -846,6 +850,127 @@ decode_OFPAT_RAW10_MODIFY_FIELD(const struct ofp10_action_modify_field *oamf,
 
     return 0;
 }
+
+
+#define POF_BITNUM_TO_BYTENUM_CEIL(len_b)   ((uint32_t)(((len_b)+7) / POF_BITNUM_IN_BYTE ))
+#define POF_MALLOC_SAFE_RETURN(ptr, count, ret)                             \
+            ptr = (typeof(ptr)) MALLOC(count * sizeof(*(ptr)));             \
+            if(!(ptr)){                                                     \
+                POF_ERROR_HANDLE_NO_RETURN_NO_UPWARD(POFET_SOFTWARE_FAILED, \
+                        POF_ALLOCATE_RESOURCE_FAILURE);                     \
+                return ret;                                                 \
+            }                                                               \
+            memset(ptr, 0, count * sizeof(*(ptr)))
+
+/*
+ * Calculate_checksum actions
+ * author@twp
+ * function:calculate the checksum
+ */
+
+/*twp:Action structure for OFPAT_RAW10_CALCULATE_CHECKSUM*/
+struct ofp10_action_calculate_checksum{
+    ovs_be16 type;                  /* OFPAT_RAW10_DELETE_FIELD. */
+    ovs_be16 len;                   /* Length is padded to 64 bits. */
+
+    uint8_t checksum_pos_type;      /* 0 means packet; 1 means metadata. */
+    uint8_t cal_startpos_type;      /* 0 means packet; 1 means metadata. */
+    uint16_t  checksum_pos;      /*the position of checksum field, bit unit*/
+    uint16_t   checksum_len;      /*checksum length, bit unit*/
+    uint16_t   cal_startpos;          /*The start position of data to be calculated, bit unit*/
+    uint16_t   cal_len;                 /*The length of data to be calculated, bit unit*/
+    uint8_t pad[2];                /* 8 bytes aligned. */
+
+};
+OFP_ASSERT(sizeof(struct ofp10_action_calculate_checksum) == 16);
+
+static void
+encode_CALCULATE_CHECKSUM(const struct ofpact_calculate_checksum *ocf,
+        enum ofp_version ofp_version,struct ofpbuf *out)
+{
+    VLOG_INFO("++++++twp encode_CALCULATE_CHECKSUM: start");
+    struct ofp10_action_calculate_checksum *occf;
+    occf=put_OFPAT10_CAlCULATE_CHECKSUM(out);
+
+    //这里不知道是否需要分类，根据field类型,暂时不分类
+    //if need to classify,will classify
+    occf->checksum_pos_type=ocf->checksum_pos_type;
+    occf->cal_startpos_type=ocf->cal_startpos_type;
+    occf->checksum_pos=htons(ocf->checksum_pos);
+    occf->checksum_len=htons(ocf->checksum_len);
+    occf->cal_startpos=htons(ocf->cal_startpos);
+    occf->cal_len=htons(ocf->cal_len);
+
+    VLOG_INFO("++++++twp encode_CALCULATE_CHUMECKSUM: end");
+}
+
+/* twp: decode_OFPAT_RAW10_CALCULATE_CHECKSUM.
+ *
+ * convert ofp10_action_calculate_checksum into ofpact_calculate_checksum.
+ * */
+static enum ofperr
+decode_OFPAT_RAW10_CALCULATE_CHECKSUM(const struct  ofp10_action_calculate_checksum *occf,
+                                      enum ofp_version ofp_version OVS_UNUSED,
+                                      struct ofpbuf *ofpacts)
+{
+    VLOG_INFO("++++++tsf decode_OFPAT_RAW10_CALCULATE_CHECKSUM: start");
+  //  ofpact_put_CALCULATE_CHECKSUM(ofpacts)->ofpact.raw = OFPAT_RAW10_CALCULATE_CHECKSUM;
+
+    struct ofpact_calculate_checksum *ocf=ofpact_put_CALCULATE_CHECKSUM(ofpacts);
+    ocf->checksum_pos_type=occf->checksum_pos_type;
+    ocf->cal_startpos_type=occf->cal_startpos_type;
+    ocf->checksum_pos=htons(occf->checksum_pos);
+    ocf->checksum_len=htons(occf->checksum_len);
+    ocf->cal_startpos=htons(occf->cal_startpos);
+    ocf->cal_len=htons(occf->cal_len);
+    /*uint64_t checksum_value = 0;
+    uint32_t ret;
+    ret = bzero_bit(&oaaf->checksum_pos_type, oaaf->cal_startpos, oaaf->cal_len);
+     //*POF_CHECK_RETVALUE_RETURN_NO_UPWARD(ret);此处删除，为pof中的日志调试信息
+    ret = checksum(&oaaf->cal_startpos_type, &checksum_value, oaaf->checksum_pos, oaaf->checksum_len, oaaf->cal_len);
+   // POF_CHECK_RETVALUE_RETURN_NO_UPWARD(ret);此处删除，l为pof中的日志调试信息
+    pofbf_cover_bit(&oaaf->checksum_pos_type, (uint8_t *)&checksum_value, oaaf->cal_startpos, oaaf->cal_len);
+    VLOG_INFO("++++++tsf decode_OFPAT_RAW10_CALCULATE_CHECKSUM: start");*/
+
+    return 0;
+}
+
+/* twp: format_CALCULATE_CHECKSUM.
+ *
+ * the format of dump-flows.
+ * */
+static void
+format_CALCULATE_CHECKSUM(const struct ofpact_calculate_checksum *odf, struct ds *s)
+{
+    VLOG_INFO("++++++twp format_CALCULATE_CHECKSUM: start");
+    char * len_type_str[2] = {"POFVT_IMMEDIATE_NUM", "POFVT_FIELD"};
+    ds_put_format(s,"%scalculate_checksum->field%s%s"PRIu16,colors.special, colors.end,len_type_str[odf->checksum_pos_type]);//first test
+    VLOG_INFO("++++++tsf format_DELETE_FIELD: end");
+}
+
+/* twp: parse_CALCULATE_CHECKSUM.
+ *
+ * parse the str to uint*_t.
+ * */
+static char * OVS_WARN_UNUSED_RESULT
+parse_CALCULATE_CHECKSUM(char *arg, struct ofpbuf *ofpacts,
+                         enum ofputil_protocol *usable_protocols OVS_UNUSED)
+{
+    VLOG_INFO("++++++twp parse_CALCULATE_CHECKSUM: start");
+
+    ofpact_put_CALCULATE_CHECKSUM(ofpacts)->ofpact.raw = OFPAT_RAW10_CALCULATE_CHECKSUM;
+
+    VLOG_INFO("++++++twp parse_CALCULATE_CHECKSUM: end");
+    return NULL;
+
+}
+
+
+
+
+
+
+
 
 /* tsf: Add_field actions. */
 
@@ -6942,6 +7067,7 @@ ofpact_is_set_or_move_action(const struct ofpact *a)
     case OFPACT_MODIFY_FIELD:  /* tsf */
     case OFPACT_ADD_FIELD: /* tsf */
     case OFPACT_DELETE_FIELD: /* tsf */
+    case OFPACT_CALCULATE_CHECKSUM:/*twp*/
     case OFPACT_REG_MOVE:
     case OFPACT_SET_ETH_DST:
     case OFPACT_SET_ETH_SRC:
@@ -7013,6 +7139,7 @@ ofpact_is_allowed_in_actions_set(const struct ofpact *a)
     case OFPACT_ADD_FIELD:  /* tsf */
     case OFPACT_DELETE_FIELD:  /* tsf */
     case OFPACT_GROUP: /* tsf */
+    case OFPACT_CALCULATE_CHECKSUM:   /* twp */
     case OFPACT_OUTPUT:
     case OFPACT_OUTPUT_TRUNC:
     case OFPACT_POP_MPLS:
@@ -7240,6 +7367,7 @@ ovs_instruction_type_from_ofpact_type(enum ofpact_type type)
     case OFPACT_MODIFY_FIELD: /* tsf */
     case OFPACT_ADD_FIELD:    /* tsf */
     case OFPACT_DELETE_FIELD:  /* tsf */
+    case OFPACT_CALCULATE_CHECKSUM: /* twp */
     case OFPACT_GROUP:			/* tsf */
     case OFPACT_CONTROLLER:
     case OFPACT_ENQUEUE:
@@ -7855,6 +7983,9 @@ ofpact_check__(enum ofputil_protocol *usable_protocols, struct ofpact *a,
     case OFPACT_DELETE_FIELD:
     	return 0;
 
+    case OFPACT_CALCULATE_CHECKSUM:
+        return 0;
+
     case OFPACT_SET_L4_SRC_PORT:
     case OFPACT_SET_L4_DST_PORT:
         if (!is_ip_any(flow) || (flow->nw_frag & FLOW_NW_FRAG_LATER) ||
@@ -8343,6 +8474,7 @@ get_ofpact_map(enum ofp_version version)
         {OFPACT_ADD_FIELD, 4}, /* tsf: according to enum ofp_raw_action_type (of1.0+)  */
         {OFPACT_DELETE_FIELD, 5}, /* tsf: according to enum ofp_raw_action_type (of1.0+)  */
         { OFPACT_GROUP, 7 },  /* tsf: add in OF1.0, to support dump-flows. */
+        { OFPACT_CALCULATE_CHECKSUM, 28 },/* twp: according to enum ofp_raw_action_type (of1.0+)  */
         { 0, -1 },
     };
 
@@ -8378,6 +8510,7 @@ get_ofpact_map(enum ofp_version version)
         {OFPACT_MODIFY_FIELD, 3}, /* tsf: according to enum ofp_raw_action_type (of1.0+)  */
         {OFPACT_ADD_FIELD, 4}, /* tsf: according to enum ofp_raw_action_type (of1.0+)  */
         {OFPACT_DELETE_FIELD, 5}, /* tsf: according to enum ofp_raw_action_type (of1.0+)  */
+        {OFPACT_CALCULATE_CHECKSUM, 28 },/* twp: according to enum ofp_raw_action_type (of1.0+)*/
         { 0, -1 },
     };
 
@@ -8401,6 +8534,7 @@ get_ofpact_map(enum ofp_version version)
         {OFPACT_MODIFY_FIELD, 3}, /* tsf: according to enum ofp_raw_action_type (of1.0+)  */
         {OFPACT_ADD_FIELD, 4}, /* tsf: according to enum ofp_raw_action_type (of1.0+)  */
         {OFPACT_DELETE_FIELD, 5}, /* tsf: according to enum ofp_raw_action_type (of1.0+)  */
+        {OFPACT_CALCULATE_CHECKSUM, 28 },/* twp: according to enum ofp_raw_action_type (of1.0+)*/
         /* OF1.3+ OFPAT_PUSH_PBB (26) not supported. */
         /* OF1.3+ OFPAT_POP_PBB (27) not supported. */
         { 0, -1 },
@@ -8511,6 +8645,7 @@ ofpact_outputs_to_port(const struct ofpact *ofpact, ofp_port_t port)
     case OFPACT_MODIFY_FIELD:  /* tsf */
     case OFPACT_ADD_FIELD: /* tsf */
     case OFPACT_DELETE_FIELD:  /* tsf */
+    case OFPACT_CALCULATE_CHECKSUM:   /* twp */
     case OFPACT_SET_MPLS_LABEL:
     case OFPACT_SET_MPLS_TC:
     case OFPACT_SET_MPLS_TTL:

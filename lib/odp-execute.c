@@ -486,6 +486,12 @@ act3:
 }
 
 static void
+odp_pof_calculate_checkusm(struct dp_packet *packet, const struct ovs_key_calculate_checksum *key,
+                     const struct ovs_key_calculate_checksum *mask)
+{
+
+}
+static void
 odp_eth_set_addrs(struct dp_packet *packet, const struct ovs_key_ethernet *key,
                   const struct ovs_key_ethernet *mask)
 {
@@ -818,6 +824,11 @@ odp_execute_masked_set_action(struct dp_packet *packet,
     	odp_pof_delete_field(packet, nl_attr_get(a),
     						get_mask(a, struct ovs_key_delete_field));
     	break;
+    case OVS_KEY_ATTR_CALCULATE_CHECKSUM:
+        /*VLOG_INFO("+++++++++++twp odp_execute_masked_set_action: before OVS_KEY_ATTR_CALCULATE_CHECKSUM");*/
+        odp_pof_calculate_checkusm(packet, nl_attr_get(a),
+                             get_mask(a, struct ovs_key_calculate_checksum));
+        break;
     case OVS_KEY_ATTR_PRIORITY:
         md->skb_priority = nl_attr_get_u32(a)
             | (md->skb_priority & ~*get_mask(a, uint32_t));

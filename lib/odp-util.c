@@ -4252,11 +4252,14 @@ static void get_pof_add_field_key(const struct pof_flow *, struct ovs_key_add_fi
 static void get_pof_add_field_mask(const struct pof_flow *, struct ovs_key_add_field *, int);
 static void get_pof_delete_field_key(const struct pof_flow *, struct ovs_key_delete_field *, int);
 static void get_pof_delete_field_mask(const struct pof_flow *, struct ovs_key_delete_field *, int);
+static void get_pof_calculate_checksum_key(const struct pof_flow *, struct ovs_key_ *, int);
+static void get_pof_calculate_checksum_mask(const struct pof_flow *, struct ovs_key_calculate_checksum *, int);
 static void put_ethernet_key(const struct ovs_key_ethernet *, struct flow *);
 static void put_pof_set_field_key(const struct ovs_key_set_field *, struct pof_flow *, int);
 static void put_pof_modify_field_key(const struct ovs_key_modify_field *, struct pof_flow *, int);
 static void put_pof_add_field_key(const struct ovs_key_add_field *, struct pof_flow *, int);
 static void put_pof_delete_field_key(const struct ovs_key_delete_field *, struct pof_flow *, int);
+static void put_pof_calculate_checksum_key(const struct ovs_key_calculate_checksum *, struct pof_flow *, int);
 static void get_ipv4_key(const struct flow *, struct ovs_key_ipv4 *,
                          bool is_mask);
 static void put_ipv4_key(const struct ovs_key_ipv4 *, struct flow *,
@@ -5612,6 +5615,113 @@ put_pof_modify_field_key(const struct ovs_key_modify_field *eth, struct pof_flow
 //        flow->value[index][i] = eth->value[i];
 //        /*VLOG_INFO("++++++tsf put_modify_field_key:eth->value[%d]=%d",i, eth->value[i]);*/
 //    }
+}
+static void
+commit_pof_calculate_checksum_action(const struct flow *flow, struct flow *base_flow,
+                                     struct ofpbuf *odp_actions,
+                                     struct flow_wildcards *wc,
+                                     bool use_masked, int index)
+{
+    struct ovs_key_calculate_checksum key, base, mask;
+
+    struct pof_flow * pflow=flow;
+    struct pof_flow * pbase=base_flow;
+
+
+    get_pof_calculate_checksum_key(pflow,&key,index);
+    get_pof_calculate_checksum_key(pbase,&mask,index);
+    use_masked=true;
+    get_pof_calculate_checksum_mask(pflow,&mask,index);
+    if (pof_commit(OVS_KEY_ATTR_CALCULATE_CHECKSUM, use_masked,
+                   &key, &base, &mask, sizeof key, odp_actions, pflow->flag)) {     //sqy notes: commit return false, no run
+        /*VLOG_INFO("+++++++++++tsf commit_pof_add_field_action: after pof_commit");*/
+        put_pof_calculate_checksum_key(&base, base_flow, index);
+        put_pof_calculate_checksum_key(&mask, &wc->masks, index);
+    }
+
+}
+
+static void
+get_pof_calculate_checksum_key(const struct pof_flow *flow, struct ovs_key_calculate_checksum *eth, int index)
+{
+    eth->checksum_pos=ntohs(flow->offset[index]);
+    eth->checksum_len=ntohs(flow->field_id[index]);
+    eth->cal_len=ntohs(flow->len[index]);
+    eth->cal_startpos=ntohs(flow->value[index][0]+flow->value[index][1]*256);
+    eth->checksum_pos_type=flow->value[index][2];
+    eth->cal_startpos_type=flow->value[index][3];
+
+
+    /*VLOG_INFO("++++++tsf get_add_field_key: eth->field_id=%d, eth->len=%d, eth->offset=%d",
+                    eth->field_id, eth->len, eth->offset);*/
+
+    if (eth->cal_startpos_type != 0xffff) {  // add static fields which come from controller
+            /*GO TO DO*/
+            /*VLOG_INFO("++++++tsf get_add_pof_field_key 1:  eth->value[%d]=%d", i, eth->value[i]);*/
+        }
+    else {   // add INT fields which come from ovs, value[0] and value[1] stores the INT intent
+
+            /*VLOG_INFO("++++++tsf get_add_pof_field_key 2:  eth->value[%d]=%d", i, eth->value[i]);*/
+        }
+
+        /*VLOG_INFO("++++++tsf get_add_field_key:  eth->value[0](intent)=%d, device_id=%lx, in_port=%d, out_port=%d",
+                eth->value[0], eth->device_id, eth->in_port, eth->out_port);*/
+}
+
+static void
+get_pof_calculate_checksum_mask(const struct pof_flow *flow, struct ovs_key_calculate_checksum *eth, int index)
+{
+    struct ovs_key_calculate_checksum *e;
+    eth->checksum_pos=ntohs(flow->offset[index]);
+    eth->checksum_len=ntohs(flow->field_id[index]);
+    eth->cal_len=ntohs(flow->len[index]);
+    eth->cal_startpos=ntohs(flow->value[index][0]+flow->value[index][1]*256);
+    eth->checksum_pos_type=flow->value[index][2];
+    eth->cal_startpos_type=flow->value[index][3];
+    /*VLOG_INFO("++++++tsf get_add_field_mask: eth->field_id=%d, eth->len=%d, eth->offset=%d",
+                    eth->field_id, eth->len, eth->offset);*/
+    /* tsf: if field_id equals 0xffff, then it's add INT fields, whose data comes from pof_flow->pof_metadata.
+     *      otherwise, ovs should add static fields which are from controller.
+     * */
+    if (eth->cal_startpos_type != 0xffff) {  // add static fields which come from controller
+
+            /*GO TO DO*/
+            /*VLOG_INFO("++++++tsf get_add_field_key:  eth->value[%d]=%d", i, eth->value[i]);*/
+        }
+
+     else {   // add INT fields which come from ovs, value[0] stores the INT intent
+
+        /*VLOG_INFO("++++++tsf get_add_field_key:  eth->value[0](intent)=%d, device_id=%lx, in_port=%d, out_port=%d",
+                  eth->value[0], eth->device_id, eth->in_port, eth->out_port);*/
+    }
+}
+
+static void
+put_pof_calculate_checksum_key(const struct ovs_key_calculate_checksum *eth, struct pof_flow *flow, int index)
+{
+
+
+    flow->offset[index]=htons(eth->checksum_pos_type);
+    flow->field_id[index]=htons(eth->checksum_len);
+    flow->len[index]=htons(eth->cal_len);
+    flow->value[index][0]=htons(eth->cal_startpos%256);
+    flow->value[index][1]=htons(eth->cal_startpos);
+    flow->value[index][2]=eth->checksum_pos_type;
+    flow->value[index][3]=eth->cal_startpos_type;
+    /* tsf: if field_id equals 0xffff, then it's add INT fields, whose data comes from pof_flow->pof_metadata.
+     *      otherwise, ovs should add static fields which are from controller.
+     * */
+    if (eth->cal_startpos_type!= 0xffff) {    // add static fields come from controller
+        for (int i = 0; i < POF_MAX_FIELD_LENGTH_IN_BYTE; i++) {
+            /*TO DO */
+            /*VLOG_INFO("++++++tsf put_add_field_key:eth->value[%d]=%d",i, eth->value[i]);*/
+        }
+    } else {  // add INT fields come from ovs
+        for (int i = 0; i < POF_MAX_FIELD_LENGTH_IN_BYTE; i++) {
+
+            /*VLOG_INFO("++++++tsf put_add_pof_field_key:  flow->value[%d]=%d", i, flow->value[index][i]);*/
+        }
+    }
 }
 
 static void

@@ -65,11 +65,11 @@ modprobe uio_pci_generic
 #done
 
 ##  IPL211, sfp for bigtao test (high speed), ethx for ostinato test (low speed)
-./tools/dpdk-devbind.py --bind=igb_uio 0000:05:00.0  # sfp R1
-./tools/dpdk-devbind.py --bind=igb_uio 0000:05:00.1  # sfp R2
+#./tools/dpdk-devbind.py --bind=igb_uio 0000:05:00.0  # sfp R1
+#./tools/dpdk-devbind.py --bind=igb_uio 0000:05:00.1  # sfp R2
 #./tools/dpdk-devbind.py --bind=igb_uio 0000:05:00.2  # sfp R3
-#./tools/dpdk-devbind.py --bind=uio_pci_generic 0000:07:00.0 # eth1
-#./tools/dpdk-devbind.py --bind=uio_pci_generic 0000:07:00.1 # eth2
+./tools/dpdk-devbind.py --bind=uio_pci_generic 0000:07:00.0 # eth1
+./tools/dpdk-devbind.py --bind=uio_pci_generic 0000:07:00.1 # eth2
 ./tools/dpdk-devbind.py --status
 echo "DPDK Environment Success"
 cd $OVS_DIR
